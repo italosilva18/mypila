@@ -1,10 +1,8 @@
 package main
 
 import (
-	"web_app/configs"
-
-	"web_app/router"
-
+	"github.com/italosilva18/prod-mpm/configs"
+	"github.com/italosilva18/prod-mpm/router"
 	"github.com/labstack/echo/v4"
 )
 
