@@ -15,9 +15,3 @@ func EnvMongoURI() string {
 
 	return os.Getenv("MONGOURI")
 }
-
-/*
-Crie uma função que verifique se a variável
-ambiente está carregada corretamente
-e retorna a variável ambiente
-*/
