@@ -1,17 +1,15 @@
 package main
 
 import (
-	"github.com/italosilva18/prod-mpm/configs"
-	"github.com/italosilva18/prod-mpm/router"
-	"github.com/labstack/echo/v4"
+	"fmt"
+	"net/http"
 )
 
 func main() {
-	e := echo.New()
 
-	configs.ConnectDB()
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Bem Vindo!\n")
+	})
+	http.ListenAndServe(":1337", nil)
 
-	router.Root(e)
-
-	e.Logger.Fatal(e.Start(":6000"))
 }
