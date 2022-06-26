@@ -1,3 +1,3 @@
-module github.com/italosilva18/prod-mpm
+module web_app
 
 go 1.18
