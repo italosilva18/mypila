@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -26,12 +27,12 @@ var Empresas []Clientes = []Clientes{
 }
 
 func rotas(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Bem Vindo!\n")
+	fmt.Fprintf(w, "Bem Vindo, %s!\n", "Italo.Costa")
 }
 
 func listarClientes(w http.ResponseWriter, r *http.Request) {
-	encoder := json.NewEncoder(w)
-	encoder.Encode(Empresas)
+
+	json.NewEncoder(w).Encode(Empresas)
 }
 
 func configRotas() {
@@ -41,12 +42,12 @@ func configRotas() {
 
 func ConfigServidor() {
 	configRotas()
-	fmt.Println("Servidor esta rodando na Porta 1337")
-	http.ListenAndServe(":1337", nil)
+	log.Fatal(http.ListenAndServe(":1337", nil))
 }
 
 func main() {
 
+	fmt.Println("Servidor esta rodando na Porta 1337")
 	ConfigServidor()
 
 }
