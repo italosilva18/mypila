@@ -36,7 +36,9 @@ func ListarClientes(w http.ResponseWriter, r *http.Request) {
 }
 
 func ConfigServidor() {
+
 	ConfigRotas()
+
 	log.Fatal(http.ListenAndServe(":1337", nil))
 }
 
