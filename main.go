@@ -26,22 +26,17 @@ var Empresas []Clientes = []Clientes{
 	},
 }
 
-func rotas(w http.ResponseWriter, r *http.Request) {
+func Rotas(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Bem Vindo, %s!\n", "Italo.Costa")
 }
 
-func listarClientes(w http.ResponseWriter, r *http.Request) {
+func ListarClientes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Empresas)
 }
 
-func configRotas() {
-	http.HandleFunc("/", rotas)
-	http.HandleFunc("/empresas", listarClientes)
-}
-
 func ConfigServidor() {
-	configRotas()
+	ConfigRotas()
 	log.Fatal(http.ListenAndServe(":1337", nil))
 }
 
