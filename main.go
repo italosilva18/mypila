@@ -27,15 +27,15 @@ var Empresas []Clientes = []Clientes{
 }
 
 func ConfigRotas() {
-	http.HandleFunc("/", Rotas)
-	http.HandleFunc("/empresas", ListarClientes)
+	http.HandleFunc("/", rotas)
+	http.HandleFunc("/empresas", listarClientes)
 }
 
-func Rotas(w http.ResponseWriter, r *http.Request) {
+func rotas(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Bem Vindo, %s!\n", "Italo.Costa")
 }
 
-func ListarClientes(w http.ResponseWriter, r *http.Request) {
+func listarClientes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Empresas)
 }
@@ -49,7 +49,14 @@ func ConfigServidor() {
 
 func main() {
 
-	fmt.Println("Servidor esta rodando na Porta 1337")
+	serv := ` " Servidor Esta Rodando na Porta 1337 " 
+       __	  .     __     __
+ 	 /    \   |   /      /    \
+	|    __   |   \-- \  |
+	 \ __ /   |    __ /  \ __ /
+	  
+	`
+	fmt.Println(serv)
 	ConfigServidor()
 
 }
