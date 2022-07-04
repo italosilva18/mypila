@@ -26,6 +26,11 @@ var Empresas []Clientes = []Clientes{
 	},
 }
 
+func ConfigRotas() {
+	http.HandleFunc("/", Rotas)
+	http.HandleFunc("/empresas", ListarClientes)
+}
+
 func Rotas(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Bem Vindo, %s!\n", "Italo.Costa")
 }
