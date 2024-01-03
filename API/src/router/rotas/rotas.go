@@ -2,6 +2,7 @@ package rotas
 
 import "net/http"
 
+// Rota representa uma rota na aplicação web.
 type Rota struct {
 	Uri                string
 	Metodo             string
