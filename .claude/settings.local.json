@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker ps:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(go get:*)",
+      "Bash(go build:*)",
+      "Bash(ls:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go test:*)",
+      "Bash(cat:*)",
+      "Bash(go fmt:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(timeout:*)",
+      "Bash(docker-compose ps:*)"
+    ]
+  }
+}

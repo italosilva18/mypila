@@ -1,0 +1,5 @@
+{
+  "name": "M2M Salary Manager",
+  "description": "A financial management dashboard for Company M2M to track salaries, vacation payouts, and operational costs.",
+  "requestFramePermissions": []
+}

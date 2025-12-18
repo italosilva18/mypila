@@ -1,0 +1,896 @@
+openapi: 3.0.3
+info:
+  title: M2M Salary Manager API
+  description: |
+    API RESTful para gerenciamento financeiro pessoal.
+
+    ## Autenticação
+    A API usa JWT Bearer tokens. Após login/registro, inclua o token no header:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    ## Rate Limiting
+    - Global: 100 requisições/minuto
+    - Auth endpoints: 20 requisições/minuto
+
+    ## Códigos de Erro
+    - 400: Dados inválidos
+    - 401: Não autenticado
+    - 403: Não autorizado (ownership)
+    - 404: Recurso não encontrado
+    - 500: Erro interno
+  version: 1.0.0
+  contact:
+    name: M2M Support
+    email: support@m2mfinanceiro.com
+
+servers:
+  - url: http://localhost:8081/api
+    description: Development server
+  - url: https://api.m2mfinanceiro.com/api
+    description: Production server
+
+tags:
+  - name: Auth
+    description: Autenticação e registro
+  - name: Companies
+    description: Gerenciamento de empresas
+  - name: Transactions
+    description: Gerenciamento de transações
+  - name: Categories
+    description: Gerenciamento de categorias
+  - name: Recurring
+    description: Transações recorrentes
+  - name: Stats
+    description: Estatísticas e relatórios
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Registrar novo usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Login do usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Credenciais inválidas
+
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      summary: Dados do usuário atual
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dados do usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /companies:
+    get:
+      tags:
+        - Companies
+      summary: Listar empresas do usuário
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de empresas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Company'
+    post:
+      tags:
+        - Companies
+      summary: Criar nova empresa
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompanyRequest'
+      responses:
+        '201':
+          description: Empresa criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /companies/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyId'
+    get:
+      tags:
+        - Companies
+      summary: Buscar empresa por ID
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Empresa encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - Companies
+      summary: Atualizar empresa
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompanyRequest'
+      responses:
+        '200':
+          description: Empresa atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - Companies
+      summary: Excluir empresa
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Empresa excluída
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Listar transações
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: month
+          in: query
+          schema:
+            type: string
+            enum: [Janeiro, Fevereiro, Março, Abril, Maio, Junho, Julho, Agosto, Setembro, Outubro, Novembro, Dezembro]
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de transações
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+    post:
+      tags:
+        - Transactions
+      summary: Criar nova transação
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Transação criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /transactions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    put:
+      tags:
+        - Transactions
+      summary: Atualizar transação
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransactionRequest'
+      responses:
+        '200':
+          description: Transação atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - Transactions
+      summary: Excluir transação
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Transação excluída
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /transactions/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    patch:
+      tags:
+        - Transactions
+      summary: Alternar status da transação
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Status alterado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /categories:
+    get:
+      tags:
+        - Categories
+      summary: Listar categorias
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de categorias
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+    post:
+      tags:
+        - Categories
+      summary: Criar nova categoria
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Categoria criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    put:
+      tags:
+        - Categories
+      summary: Atualizar categoria
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          description: Categoria atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - Categories
+      summary: Excluir categoria
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Categoria excluída
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /recurring:
+    get:
+      tags:
+        - Recurring
+      summary: Listar transações recorrentes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de transações recorrentes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecurringTransaction'
+    post:
+      tags:
+        - Recurring
+      summary: Criar transação recorrente
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecurringRequest'
+      responses:
+        '201':
+          description: Transação recorrente criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTransaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /recurring/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RecurringId'
+    put:
+      tags:
+        - Recurring
+      summary: Atualizar transação recorrente
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRecurringRequest'
+      responses:
+        '200':
+          description: Transação recorrente atualizada
+    delete:
+      tags:
+        - Recurring
+      summary: Excluir transação recorrente
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Transação recorrente excluída
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /recurring/{id}/generate:
+    parameters:
+      - $ref: '#/components/parameters/RecurringId'
+    post:
+      tags:
+        - Recurring
+      summary: Gerar transações do mês
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                month:
+                  type: string
+                year:
+                  type: integer
+      responses:
+        '200':
+          description: Transações geradas
+
+  /stats:
+    get:
+      tags:
+        - Stats
+      summary: Estatísticas gerais
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estatísticas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID da empresa (ObjectID)
+    TransactionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID da transação (ObjectID)
+    CategoryId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID da categoria (ObjectID)
+    RecurringId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID da transação recorrente (ObjectID)
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Nome do usuário
+        email:
+          type: string
+          format: email
+          description: Email válido
+        password:
+          type: string
+          minLength: 6
+          description: Senha (mínimo 6 caracteres)
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token
+        user:
+          $ref: '#/components/schemas/User'
+
+    Company:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        userId:
+          type: string
+
+    CreateCompanyRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Nome da empresa
+
+    UpdateCompanyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        companyId:
+          type: string
+        month:
+          type: string
+          enum: [Janeiro, Fevereiro, Março, Abril, Maio, Junho, Julho, Agosto, Setembro, Outubro, Novembro, Dezembro]
+        year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+        amount:
+          type: number
+          minimum: 0.01
+        category:
+          type: string
+        status:
+          type: string
+          enum: [PAGO, ABERTO]
+        description:
+          type: string
+
+    CreateTransactionRequest:
+      type: object
+      required:
+        - companyId
+        - month
+        - year
+        - amount
+        - category
+        - status
+      properties:
+        companyId:
+          type: string
+        month:
+          type: string
+          enum: [Janeiro, Fevereiro, Março, Abril, Maio, Junho, Julho, Agosto, Setembro, Outubro, Novembro, Dezembro]
+        year:
+          type: integer
+          minimum: 2000
+          maximum: 2100
+        amount:
+          type: number
+          minimum: 0.01
+          description: Valor deve ser maior que zero
+        category:
+          type: string
+          minLength: 1
+          description: Categoria obrigatória
+        status:
+          type: string
+          enum: [PAGO, ABERTO]
+        description:
+          type: string
+          maxLength: 200
+
+    UpdateTransactionRequest:
+      type: object
+      properties:
+        month:
+          type: string
+        year:
+          type: integer
+        amount:
+          type: number
+        category:
+          type: string
+        status:
+          type: string
+          enum: [PAGO, ABERTO]
+        description:
+          type: string
+          maxLength: 200
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        budget:
+          type: number
+
+    CreateCategoryRequest:
+      type: object
+      required:
+        - name
+        - color
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          description: Cor hexadecimal (#RRGGBB)
+        budget:
+          type: number
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        budget:
+          type: number
+
+    RecurringTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        companyId:
+          type: string
+        description:
+          type: string
+        amount:
+          type: number
+        category:
+          type: string
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+        active:
+          type: boolean
+
+    CreateRecurringRequest:
+      type: object
+      required:
+        - companyId
+        - description
+        - amount
+        - category
+        - dayOfMonth
+      properties:
+        companyId:
+          type: string
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        amount:
+          type: number
+          minimum: 0.01
+        category:
+          type: string
+          minLength: 1
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+
+    UpdateRecurringRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 200
+        amount:
+          type: number
+        category:
+          type: string
+        dayOfMonth:
+          type: integer
+        active:
+          type: boolean
+
+    Stats:
+      type: object
+      properties:
+        totalPaid:
+          type: number
+        totalOpen:
+          type: number
+        total:
+          type: number
+        byCategory:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              total:
+                type: number
+        byMonth:
+          type: array
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+              paid:
+                type: number
+              open:
+                type: number
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+  responses:
+    ValidationError:
+      description: Erro de validação
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Token inválido ou expirado
+    Forbidden:
+      description: Não autorizado (ownership)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Você não tem permissão para acessar este recurso
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Recurso não encontrado

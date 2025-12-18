@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-stone-50 text-stone-900;
+  font-family: 'Nunito', sans-serif;
+}
+
+/* Estilos para scrollbar vintage */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f3f0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a8a29e;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #78716c;
+}
+
+/* Seleção de texto com estilo vintage */
+::selection {
+  background-color: rgba(41, 37, 36, 0.2);
+  color: #1c1917;
+}
+
+/* Safe area para dispositivos com notch */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 16px);
+}
+
+/* Esconder scrollbar em mobile mas manter funcionalidade */
+@media (max-width: 768px) {
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Adicionar padding inferior para não sobrepor bottom navigation */
+  .mobile-content-padding {
+    padding-bottom: 64px;
+  }
+}
