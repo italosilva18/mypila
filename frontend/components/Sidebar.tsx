@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw, ClipboardList } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export const Sidebar: React.FC = () => {
@@ -76,6 +76,16 @@ export const Sidebar: React.FC = () => {
                     >
                         <RefreshCw className="w-5 h-5" />
                         <span>Recorrências</span>
+                    </NavLink>
+
+                    <NavLink
+                        to="quotes"
+                        className={({ isActive }) =>
+                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                        }
+                    >
+                        <ClipboardList className="w-5 h-5" />
+                        <span>Orçamentos</span>
                     </NavLink>
                 </nav>
             </div>

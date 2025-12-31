@@ -1,6 +1,6 @@
 import React from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Tags, RefreshCw, FileText } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Tags, RefreshCw, FileText, ClipboardList } from 'lucide-react';
 
 interface NavItem {
   path: string;
@@ -11,13 +11,13 @@ interface NavItem {
 export const BottomNavigation: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { companyId } = useParams<{ companyId: string }>();
 
   const navItems: NavItem[] = [
     { path: 'dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
-    { path: 'categories', icon: <Tags size={18} />, label: 'Categorias' },
+    { path: 'categories', icon: <Tags size={18} />, label: 'Categ.' },
     { path: 'recurring', icon: <RefreshCw size={18} />, label: 'Fixas' },
-    { path: 'reports', icon: <FileText size={18} />, label: 'Relatórios' },
+    { path: 'quotes', icon: <ClipboardList size={18} />, label: 'Orcam.' },
+    { path: 'reports', icon: <FileText size={18} />, label: 'Relat.' },
   ];
 
   const isActive = (path: string) => location.pathname.endsWith(path);

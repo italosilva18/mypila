@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"sync"
+
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
@@ -9,7 +11,17 @@ import (
 	"m2m-backend/services"
 )
 
-var companyService = services.NewCompanyService()
+var (
+	companyService     *services.CompanyService
+	companyServiceOnce sync.Once
+)
+
+func getCompanyService() *services.CompanyService {
+	companyServiceOnce.Do(func() {
+		companyService = services.NewCompanyService()
+	})
+	return companyService
+}
 
 // GetCompanies returns all companies owned by the authenticated user
 func GetCompanies(c *fiber.Ctx) error {
@@ -20,7 +32,7 @@ func GetCompanies(c *fiber.Ctx) error {
 	}
 
 	// Call service layer
-	companies, err := companyService.GetCompaniesByUserID(userID)
+	companies, err := getCompanyService().GetCompaniesByUserID(userID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch companies"})
 	}
@@ -43,7 +55,7 @@ func CreateCompany(c *fiber.Ctx) error {
 	}
 
 	// Call service layer
-	company, validationErrors, err := companyService.CreateCompany(userID, req)
+	company, validationErrors, err := getCompanyService().CreateCompany(userID, req)
 	if err != nil {
 		if err == services.ErrInvalidInput && validationErrors != nil {
 			return helpers.SendValidationErrors(c, validationErrors)
@@ -76,7 +88,7 @@ func UpdateCompany(c *fiber.Ctx) error {
 	}
 
 	// Call service layer
-	company, validationErrors, err := companyService.UpdateCompany(companyID, userID, req)
+	company, validationErrors, err := getCompanyService().UpdateCompany(companyID, userID, req)
 	if err != nil {
 		if err == services.ErrInvalidInput && validationErrors != nil {
 			return helpers.SendValidationErrors(c, validationErrors)
@@ -112,7 +124,7 @@ func DeleteCompany(c *fiber.Ctx) error {
 	}
 
 	// Call service layer
-	err = companyService.DeleteCompany(companyID, userID)
+	err = getCompanyService().DeleteCompany(companyID, userID)
 	if err != nil {
 		if err == services.ErrCompanyNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "Company not found"})

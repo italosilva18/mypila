@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Trash2, Plus, RefreshCw, Calendar, DollarSign, Tag, Check } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Calendar, Check } from 'lucide-react';
 import { api } from '../services/api';
 import { RecurringTransaction, Category } from '../types';
 import { useDateFilter } from '../contexts/DateFilterContext';

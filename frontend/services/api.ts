@@ -1,4 +1,4 @@
-import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction } from '../types';
+import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081/api';
 
@@ -125,7 +125,9 @@ class ApiService {
 
   // Transactions
   async getTransactions(companyId: string): Promise<Transaction[]> {
-    return this.request<Transaction[]>(`/transactions?companyId=${companyId}`);
+    // Backend returns paginated response {Data: Transaction[], Pagination: {...}}
+    const response = await this.request<{ Data: Transaction[]; Pagination: { Page: number; Limit: number; Total: number; TotalPages: number } }>(`/transactions?companyId=${companyId}`);
+    return response.Data || [];
   }
 
   async getTransaction(id: string): Promise<Transaction> {
@@ -195,6 +197,96 @@ class ApiService {
   async seedData(): Promise<{ message: string; count: number }> {
     return this.request('/seed', {
       method: 'POST',
+    });
+  }
+
+  // ===== Quotes =====
+  async getQuotes(companyId: string, status?: QuoteStatus): Promise<Quote[]> {
+    const params = new URLSearchParams({ companyId });
+    if (status) params.append('status', status);
+    return this.request<Quote[]>(`/quotes?${params.toString()}`);
+  }
+
+  async getQuote(id: string): Promise<Quote> {
+    return this.request<Quote>(`/quotes/${id}`);
+  }
+
+  async createQuote(companyId: string, data: CreateQuoteRequest): Promise<Quote> {
+    return this.request<Quote>(`/quotes?companyId=${companyId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateQuote(id: string, data: Partial<CreateQuoteRequest>): Promise<Quote> {
+    return this.request<Quote>(`/quotes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteQuote(id: string): Promise<void> {
+    return this.request(`/quotes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async duplicateQuote(id: string): Promise<Quote> {
+    return this.request<Quote>(`/quotes/${id}/duplicate`, {
+      method: 'POST',
+    });
+  }
+
+  async updateQuoteStatus(id: string, status: QuoteStatus): Promise<Quote> {
+    return this.request<Quote>(`/quotes/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async downloadQuotePDF(id: string): Promise<Blob> {
+    const headers: HeadersInit = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(`${API_URL}/quotes/${id}/pdf`, { headers });
+    if (!response.ok) {
+      throw new Error('Falha ao gerar PDF');
+    }
+    return response.blob();
+  }
+
+  async getQuoteComparison(id: string): Promise<QuoteComparison> {
+    return this.request<QuoteComparison>(`/quotes/${id}/comparison`);
+  }
+
+  // ===== Quote Templates =====
+  async getQuoteTemplates(companyId: string): Promise<QuoteTemplate[]> {
+    return this.request<QuoteTemplate[]>(`/quote-templates?companyId=${companyId}`);
+  }
+
+  async getQuoteTemplate(id: string): Promise<QuoteTemplate> {
+    return this.request<QuoteTemplate>(`/quote-templates/${id}`);
+  }
+
+  async createQuoteTemplate(companyId: string, data: CreateQuoteTemplateRequest): Promise<QuoteTemplate> {
+    return this.request<QuoteTemplate>(`/quote-templates?companyId=${companyId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateQuoteTemplate(id: string, data: Partial<CreateQuoteTemplateRequest>): Promise<QuoteTemplate> {
+    return this.request<QuoteTemplate>(`/quote-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteQuoteTemplate(id: string): Promise<void> {
+    return this.request(`/quote-templates/${id}`, {
+      method: 'DELETE',
     });
   }
 }

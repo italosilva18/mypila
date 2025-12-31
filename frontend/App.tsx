@@ -6,6 +6,8 @@ import { Layout } from './components/Layout';
 import { Categories } from './pages/Categories';
 import { Reports } from './pages/Reports';
 import { Recurring } from './pages/Recurring';
+import { Quotes } from './pages/Quotes';
+import { QuoteComparisonPage } from './pages/QuoteComparison';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -52,6 +54,8 @@ const AppRoutes: React.FC = () => {
         <Route path="categories" element={<Categories />} />
         <Route path="reports" element={<Reports />} />
         <Route path="recurring" element={<Recurring />} />
+        <Route path="quotes" element={<Quotes />} />
+        <Route path="quotes/:quoteId/comparison" element={<QuoteComparisonPage />} />
         {/* Redirect root company path to dashboard */}
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>

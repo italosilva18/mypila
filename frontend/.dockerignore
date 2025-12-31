@@ -9,7 +9,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
+# NOTE: package-lock.json is REQUIRED for npm ci - do NOT ignore it
 yarn.lock
 pnpm-lock.yaml
 
@@ -92,7 +92,6 @@ storybook-static/
 Dockerfile*
 docker-compose*
 .dockerignore
-nginx.conf
 
 # CI/CD
 .github/

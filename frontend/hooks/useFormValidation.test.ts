@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useFormValidation } from './useFormValidation';
-import { ValidationResult } from '../utils/validation';
 
 describe('useFormValidation Hook', () => {
   describe('Initial State', () => {
