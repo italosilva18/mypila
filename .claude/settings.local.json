@@ -19,7 +19,30 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
       "Bash(timeout:*)",
-      "Bash(docker-compose ps:*)"
+      "Bash(docker-compose ps:*)",
+      "Bash(wc:*)",
+      "WebSearch",
+      "Bash(cd:*)",
+      "Bash(pushd \"D:\\\\mypila\\\\backend\")",
+      "Bash(popd)",
+      "Bash(pushd \"D:\\\\mypila\\\\frontend\")",
+      "Bash(npm install)",
+      "Bash(docker --version:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker info:*)",
+      "Bash(docker version:*)",
+      "Bash(docker context ls:*)",
+      "Bash(docker context use:*)",
+      "Bash(wsl --shutdown)",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Stop-Process -Name ''Docker Desktop'' -Force -ErrorAction SilentlyContinue; Stop-Process -Name ''com.docker.backend'' -Force -ErrorAction SilentlyContinue; Write-Host ''Docker processes stopped''\")",
+      "Bash(powershell -Command \"Start-Process ''C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe''; Write-Host ''Docker Desktop starting...''\")",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 30; docker ps 2>&1\")",
+      "Bash(wget:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Critical security and infrastructure improvements\n\nSecurity fixes:\n- Remove JWT secret from logs \\(SEC-002\\)\n- Restrict CORS to known origins \\(SEC-003\\)\n- Add mutex to prevent race condition in quote number generation\n\nDocker improvements:\n- Use specific image versions \\(alpine:3.19, nginx:1.25-alpine\\)\n- Add non-root user for security hardening\n- Add proper healthchecks in Dockerfiles\n- Fix package-lock.json in .dockerignore for npm ci\n\nBackend fixes:\n- Fix memory leaks by closing MongoDB cursors\n- Add context timeouts for database operations\n- Add proper error handling in recurring handlers\n- Add lazy initialization with sync.Once for services\n\nCI/CD fixes:\n- Fix Go version from 1.24 to 1.22 in GitHub Actions\n\nFrontend fixes:\n- Fix paginated response handling in api.ts\n- Various TypeScript and component improvements\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

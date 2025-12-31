@@ -89,7 +89,7 @@ export const FinancialChart: React.FC<Props> = ({ transactions, categories = [] 
               <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#78716c' }} axisLine={false} tickLine={false} tickFormatter={(value) => value.substring(0, 3)} />
               <YAxis tick={{ fontSize: 9, fill: '#78716c' }} axisLine={false} tickLine={false} tickFormatter={(value) => `${value / 1000}k`} width={30} />
               <Tooltip
-                formatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}
+                formatter={(value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0)}
                 contentStyle={{ borderRadius: '8px', border: '1px solid #e7e5e4', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#faf8f5', fontSize: '11px' }}
               />
               <Legend wrapperStyle={{ fontSize: '10px' }} />
@@ -119,7 +119,7 @@ export const FinancialChart: React.FC<Props> = ({ transactions, categories = [] 
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}
+                formatter={(value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0)}
                 contentStyle={{ borderRadius: '8px', border: '1px solid #e7e5e4', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#faf8f5', fontSize: '11px' }}
               />
               <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: '10px' }} />

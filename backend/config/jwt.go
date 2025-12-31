@@ -39,8 +39,6 @@ func InitializeJWTSecret() error {
 	log.Println("[SECURITY WARNING] Generated random JWT_SECRET for this session")
 	log.Println("[SECURITY WARNING] All tokens will be invalidated on server restart")
 	log.Println("[SECURITY WARNING] Set JWT_SECRET environment variable for production!")
-	log.Printf("[SECURITY INFO] Generated secret: %s", JWTSecret)
-	log.Println("[SECURITY INFO] Add this to your .env file or environment variables")
 	
 	return nil
 }

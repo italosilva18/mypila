@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, Bell, Settings } from 'lucide-react';
+import { ChevronLeft, Bell } from 'lucide-react';
 
 interface Props {
   title: string;

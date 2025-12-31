@@ -14,7 +14,7 @@ export const Register: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { register } = useAuth();
     const navigate = useNavigate();
-    const { validateFields, getError, hasError, clearAllErrors } = useFormValidation();
+    const { validateFields, getError, hasError } = useFormValidation();
 
     const validateForm = (): boolean => {
         return validateFields({

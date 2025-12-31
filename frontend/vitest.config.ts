@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react()] as any,
   test: {
     globals: true,
     environment: 'jsdom',
@@ -22,10 +22,12 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.test.tsx',
       ],
-      lines: 80,
-      functions: 80,
-      branches: 80,
-      statements: 80,
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+      },
     },
   },
   resolve: {

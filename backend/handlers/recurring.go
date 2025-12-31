@@ -95,13 +95,17 @@ func GetRecurring(c *fiber.Ctx) error {
 
 	collection := database.GetCollection("recurring")
 
-	cursor, err := collection.Find(context.Background(), bson.M{"companyId": companyObjID})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch rules"})
 	}
+	defer cursor.Close(ctx)
 
 	var rules []models.RecurringTransaction
-	if err = cursor.All(context.Background(), &rules); err != nil {
+	if err = cursor.All(ctx, &rules); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse rules"})
 	}
 
@@ -157,14 +161,23 @@ func ProcessRecurring(c *fiber.Ctx) error {
 		return err
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	rulesColl := database.GetCollection("recurring")
 	transColl := database.GetCollection("transactions")
 
 	// Get all rules
-	cursor, _ := rulesColl.Find(ctx, bson.M{"companyId": companyObjID})
+	cursor, err := rulesColl.Find(ctx, bson.M{"companyId": companyObjID})
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch recurring rules"})
+	}
+	defer cursor.Close(ctx)
+
 	var rules []models.RecurringTransaction
-	cursor.All(ctx, &rules)
+	if err = cursor.All(ctx, &rules); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse recurring rules"})
+	}
 
 	createdCount := 0
 

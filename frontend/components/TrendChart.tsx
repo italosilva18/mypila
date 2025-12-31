@@ -6,8 +6,7 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    ResponsiveContainer,
-    ReferenceLine
+    ResponsiveContainer
 } from 'recharts';
 import { Transaction, Status } from '../types';
 
@@ -27,11 +26,6 @@ export const TrendChart: React.FC<Props> = ({ transactions, year }) => {
             const paid = monthlyTransactions
                 .filter(t => t.status === Status.PAID && t.category !== 'Salário' && t.category !== 'Receita') // Assuming Expense
                 .reduce((acc, t) => acc + t.amount, 0);
-
-            const income = monthlyTransactions
-                .filter(t => t.category === 'Salário' || t.category === 'Receita') // Getting basic Income
-                .reduce((acc, t) => acc + t.amount, 0)
-                || 3500; // Fallback to hypothetical fixed income if none logged, just for visualization if user wants
 
             return {
                 name: month.substring(0, 3), // Jan, Fev...
@@ -56,7 +50,7 @@ export const TrendChart: React.FC<Props> = ({ transactions, year }) => {
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#78716c' }} />
                         <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${value / 1000}k`} tick={{ fontSize: 9, fill: '#78716c' }} width={30} />
                         <Tooltip
-                            formatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}
+                            formatter={(value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0)}
                             contentStyle={{ borderRadius: '8px', border: '1px solid #e7e5e4', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#faf8f5', fontSize: '11px' }}
                         />
                         <CartesianGrid vertical={false} stroke="#e7e5e4" />

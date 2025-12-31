@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { Category, CategoryType } from '../types';
-import { Plus, Trash2, Tag, Loader2, ArrowUpCircle, ArrowDownCircle, Edit2, X, Save } from 'lucide-react';
+import { Plus, Trash2, Tag, Loader2, ArrowUpCircle, ArrowDownCircle, X, Save } from 'lucide-react';
 import { useFormValidation } from '../hooks/useFormValidation';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from '../components/ErrorMessage';

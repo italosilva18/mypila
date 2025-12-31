@@ -5,15 +5,9 @@ import {
     ArrowLeft,
     Plus,
     Search,
-    ArrowUpCircle,
-    ArrowDownCircle,
     Wallet,
-    Calendar,
-    DollarSign,
-    Tag,
     CheckCircle2,
     AlertCircle,
-    Menu,
     Edit2
 } from 'lucide-react';
 import { useTransactions } from '../hooks/useTransactions';
@@ -30,7 +24,7 @@ import { formatCurrency } from '../utils/currency';
 export const Dashboard: React.FC = () => {
     const { companyId } = useParams<{ companyId: string }>();
     const { month, year } = useDateFilter();
-    const { transactions, stats: globalStats, loading, error, createTransaction, updateTransaction, toggleStatus, deleteTransaction, refreshData } = useTransactions(companyId!);
+    const { transactions, loading, createTransaction, updateTransaction, toggleStatus, deleteTransaction } = useTransactions(companyId!);
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -198,7 +192,7 @@ export const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Charts Section */}
-                <FinancialChart transactions={transactions} categories={categories} />
+                <FinancialChart transactions={transactions} categories={categories.map(c => ({ ...c, color: c.color || '#78716c' }))} />
                 <TrendChart transactions={transactions} year={year} />
 
                 {/* Transactions Section */}

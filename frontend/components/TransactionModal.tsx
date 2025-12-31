@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { Category, Status, Transaction } from '../types';
-import { api } from '../services/api';
 import { useFormValidation } from '../hooks/useFormValidation';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from './ErrorMessage';
@@ -78,7 +77,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, tra
       return;
     }
 
-    onSave(formData);
+    onSave({ ...formData, companyId });
     onClose();
   };
 

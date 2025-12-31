@@ -74,10 +74,17 @@ func main() {
 
 	// Global middleware
 	app.Use(logger.New())
+
+	// CORS configuration - restrict to known origins
+	corsOrigins := os.Getenv("CORS_ORIGINS")
+	if corsOrigins == "" {
+		corsOrigins = "http://localhost:3000,http://localhost:3333,http://localhost:5173"
+	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-		AllowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+		AllowOrigins:     corsOrigins,
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowMethods:     "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+		AllowCredentials: true,
 	}))
 
 	// Global rate limiting: 100 requests per minute per IP
@@ -158,6 +165,26 @@ func main() {
 	recurring.Post("/", handlers.CreateRecurring)
 	recurring.Delete("/:id", handlers.DeleteRecurring)
 	recurring.Post("/process", handlers.ProcessRecurring)
+
+	// Quote routes
+	quotes := api.Group("/quotes")
+	quotes.Get("/", handlers.GetQuotes)
+	quotes.Get("/:id", handlers.GetQuote)
+	quotes.Post("/", handlers.CreateQuote)
+	quotes.Put("/:id", handlers.UpdateQuote)
+	quotes.Delete("/:id", handlers.DeleteQuote)
+	quotes.Post("/:id/duplicate", handlers.DuplicateQuote)
+	quotes.Patch("/:id/status", handlers.UpdateQuoteStatus)
+	quotes.Get("/:id/pdf", handlers.GenerateQuotePDF)
+	quotes.Get("/:id/comparison", handlers.GetQuoteComparison)
+
+	// Quote Template routes
+	quoteTemplates := api.Group("/quote-templates")
+	quoteTemplates.Get("/", handlers.GetQuoteTemplates)
+	quoteTemplates.Get("/:id", handlers.GetQuoteTemplate)
+	quoteTemplates.Post("/", handlers.CreateQuoteTemplate)
+	quoteTemplates.Put("/:id", handlers.UpdateQuoteTemplate)
+	quoteTemplates.Delete("/:id", handlers.DeleteQuoteTemplate)
 
 	// Seed route (for initial data)
 	api.Post("/seed", handlers.SeedTransactions)

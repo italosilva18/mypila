@@ -4,6 +4,7 @@
  * Helpers e utilities customizadas para facilitar a escrita de testes
  */
 
+/// <reference types="vitest/globals" />
 import React, { ReactElement } from 'react';
 import { render, RenderOptions, RenderResult } from '@testing-library/react';
 import { AuthProvider } from '../../contexts/AuthContext';
