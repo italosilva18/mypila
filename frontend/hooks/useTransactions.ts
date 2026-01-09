@@ -17,7 +17,10 @@ export function useTransactions(companyId: string) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchTransactions = useCallback(async () => {
-    if (!companyId) return;
+    if (!companyId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -48,7 +51,7 @@ export function useTransactions(companyId: string) {
     refreshData();
   }, [refreshData]);
 
-  const createTransaction = async (data: Omit<Transaction, 'id' | 'companyId'>) => {
+  const createTransaction = useCallback(async (data: Omit<Transaction, 'id' | 'companyId'>) => {
     if (!companyId) return;
     try {
       setError(null);
@@ -64,9 +67,9 @@ export function useTransactions(companyId: string) {
       addToast('error', `Erro ao criar transacao: ${message}`);
       throw err;
     }
-  };
+  }, [companyId, fetchStats, addToast]);
 
-  const updateTransaction = async (id: string, data: Omit<Transaction, 'id' | 'companyId'>) => {
+  const updateTransaction = useCallback(async (id: string, data: Omit<Transaction, 'id' | 'companyId'>) => {
     if (!companyId) return;
     try {
       setError(null);
@@ -82,9 +85,9 @@ export function useTransactions(companyId: string) {
       addToast('error', `Erro ao atualizar transacao: ${message}`);
       throw err;
     }
-  };
+  }, [companyId, fetchStats, addToast]);
 
-  const deleteTransaction = async (id: string) => {
+  const deleteTransaction = useCallback(async (id: string) => {
     try {
       setError(null);
       await api.deleteTransaction(id);
@@ -97,9 +100,9 @@ export function useTransactions(companyId: string) {
       addToast('error', `Erro ao excluir transacao: ${message}`);
       throw err;
     }
-  };
+  }, [fetchStats, addToast]);
 
-  const toggleStatus = async (id: string) => {
+  const toggleStatus = useCallback(async (id: string) => {
     try {
       setError(null);
       const updated = await api.toggleStatus(id);
@@ -113,7 +116,7 @@ export function useTransactions(companyId: string) {
       addToast('error', `Erro ao alterar status: ${message}`);
       throw err;
     }
-  };
+  }, [fetchStats, addToast]);
 
   const seedData = async () => {
     try {

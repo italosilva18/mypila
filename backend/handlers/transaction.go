@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"math"
 	"strconv"
 	"time"
@@ -218,7 +219,8 @@ func CreateTransaction(c *fiber.Ctx) error {
 
 	_, err = collection.InsertOne(ctx, transaction)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar transação"})
+		log.Printf("[ERROR] Failed to create transaction: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar transação", "details": err.Error()})
 	}
 
 	return c.Status(201).JSON(transaction)

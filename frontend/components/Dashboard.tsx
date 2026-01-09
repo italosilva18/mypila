@@ -11,7 +11,8 @@ import {
     Edit2
 } from 'lucide-react';
 import { useTransactions } from '../hooks/useTransactions';
-import { Transaction, Category, Status } from '../types';
+import { useDebounce } from '../hooks/useDebounce';
+import { Transaction, Category, CategoryType, Status } from '../types';
 
 import { api } from '../services/api';
 import { FinancialChart } from './FinancialChart';
@@ -26,6 +27,7 @@ export const Dashboard: React.FC = () => {
     const { month, year } = useDateFilter();
     const { transactions, loading, createTransaction, updateTransaction, toggleStatus, deleteTransaction } = useTransactions(companyId!);
     const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
     const [showModal, setShowModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [companyName, setCompanyName] = useState('Carregando...');
@@ -34,14 +36,14 @@ export const Dashboard: React.FC = () => {
     // Memoized filtered transactions - only recalculates when dependencies change
     const filteredTransactions = useMemo(() => {
         return transactions.filter(t => {
-            const matchesSearch = t.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.category.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = t.description?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+                t.category.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
 
             const matchesDate = t.month === month && t.year === year;
 
             return matchesSearch && matchesDate;
         });
-    }, [transactions, searchTerm, month, year]);
+    }, [transactions, debouncedSearchTerm, month, year]);
 
     // Memoized stats - only recalculates when filtered transactions change
     const currentStats = useMemo(() => {
@@ -87,6 +89,13 @@ export const Dashboard: React.FC = () => {
         setShowModal(false);
         setEditingTransaction(null);
     }, []);
+
+    const handleCreateCategory = useCallback(async (name: string, type: CategoryType): Promise<Category> => {
+        if (!companyId) throw new Error('Company ID is required');
+        const newCategory = await api.createCategory(companyId, name, type, '#78716c', 0);
+        setCategories(prev => [...prev, newCategory]);
+        return newCategory;
+    }, [companyId]);
 
     if (loading) return (
         <div className="min-h-screen bg-paper flex items-center justify-center text-stone-900">
@@ -343,6 +352,7 @@ export const Dashboard: React.FC = () => {
                 isOpen={showModal}
                 onClose={handleModalClose}
                 onSave={handleSaveTransaction}
+                onCreateCategory={handleCreateCategory}
                 transaction={editingTransaction}
                 categories={categories}
                 companyId={companyId!}

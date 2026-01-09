@@ -7,14 +7,9 @@ import {
     Eye, Send, CheckCircle, XCircle, Play, Filter, Search
 } from 'lucide-react';
 import { QuoteModal } from '../components/QuoteModal';
-
-const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
-const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-};
+import { useToast } from '../contexts/ToastContext';
+import { formatCurrency } from '../utils/currency';
+import { formatDate } from '../utils/date';
 
 const statusConfig: Record<QuoteStatus, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
     [QuoteStatus.DRAFT]: {
@@ -49,9 +44,22 @@ const statusConfig: Record<QuoteStatus, { label: string; color: string; bgColor:
     },
 };
 
+// StatusBadge moved outside component and memoized for performance
+const StatusBadge = React.memo<{ status: QuoteStatus }>(({ status }) => {
+    const config = statusConfig[status];
+    return (
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.color} ${config.bgColor}`}>
+            {config.icon}
+            {config.label}
+        </span>
+    );
+});
+StatusBadge.displayName = 'StatusBadge';
+
 export const Quotes: React.FC = () => {
     const { companyId } = useParams<{ companyId: string }>();
     const navigate = useNavigate();
+    const { addToast } = useToast();
     const [quotes, setQuotes] = useState<Quote[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
@@ -71,11 +79,12 @@ export const Quotes: React.FC = () => {
             setQuotes(quotesData);
             setCategories(categoriesData);
         } catch (err) {
+            addToast('error', 'Erro ao carregar orçamentos');
             console.error('Failed to load data', err);
         } finally {
             setLoading(false);
         }
-    }, [companyId]);
+    }, [companyId, addToast]);
 
     useEffect(() => {
         loadData();
@@ -101,26 +110,30 @@ export const Quotes: React.FC = () => {
         handleModalClose();
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Tem certeza que deseja excluir este orcamento?')) return;
+    const handleDelete = useCallback(async (id: string) => {
+        if (!confirm('Tem certeza que deseja excluir este orçamento?')) return;
         try {
             await api.deleteQuote(id);
-            setQuotes(quotes.filter(q => q.id !== id));
+            setQuotes(prev => prev.filter(q => q.id !== id));
+            addToast('success', 'Orçamento excluído com sucesso');
         } catch (err) {
+            addToast('error', 'Erro ao excluir orçamento');
             console.error('Failed to delete quote', err);
         }
-    };
+    }, [addToast]);
 
-    const handleDuplicate = async (id: string) => {
+    const handleDuplicate = useCallback(async (id: string) => {
         try {
             const duplicated = await api.duplicateQuote(id);
-            setQuotes([duplicated, ...quotes]);
+            setQuotes(prev => [duplicated, ...prev]);
+            addToast('success', 'Orçamento duplicado com sucesso');
         } catch (err) {
+            addToast('error', 'Erro ao duplicar orçamento');
             console.error('Failed to duplicate quote', err);
         }
-    };
+    }, [addToast]);
 
-    const handleDownloadPDF = async (id: string, number: string) => {
+    const handleDownloadPDF = useCallback(async (id: string, number: string) => {
         try {
             const blob = await api.downloadQuotePDF(id);
             const url = window.URL.createObjectURL(blob);
@@ -131,19 +144,23 @@ export const Quotes: React.FC = () => {
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
+            addToast('success', 'PDF baixado com sucesso');
         } catch (err) {
+            addToast('error', 'Erro ao baixar PDF');
             console.error('Failed to download PDF', err);
         }
-    };
+    }, [addToast]);
 
-    const _handleStatusChange = async (id: string, newStatus: QuoteStatus) => {
+    const _handleStatusChange = useCallback(async (id: string, newStatus: QuoteStatus) => {
         try {
             const updated = await api.updateQuoteStatus(id, newStatus);
-            setQuotes(quotes.map(q => q.id === id ? updated : q));
+            setQuotes(prev => prev.map(q => q.id === id ? updated : q));
+            addToast('success', 'Status atualizado com sucesso');
         } catch (err) {
+            addToast('error', 'Erro ao atualizar status');
             console.error('Failed to update status', err);
         }
-    };
+    }, [addToast]);
     void _handleStatusChange;
 
     const handleViewComparison = (quoteId: string) => {
@@ -158,16 +175,6 @@ export const Quotes: React.FC = () => {
             quote.title.toLowerCase().includes(searchTerm.toLowerCase());
         return matchesStatus && matchesSearch;
     });
-
-    const StatusBadge: React.FC<{ status: QuoteStatus }> = ({ status }) => {
-        const config = statusConfig[status];
-        return (
-            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.color} ${config.bgColor}`}>
-                {config.icon}
-                {config.label}
-            </span>
-        );
-    };
 
     return (
         <div className="space-y-3 md:space-y-6 mobile-content-padding">

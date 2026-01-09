@@ -1,18 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { Category, CategoryType } from '../types';
 import { Plus, Trash2, Tag, Loader2, ArrowUpCircle, ArrowDownCircle, X, Save } from 'lucide-react';
 import { useFormValidation } from '../hooks/useFormValidation';
+import { useToast } from '../contexts/ToastContext';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from '../components/ErrorMessage';
-
-const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
+import { formatCurrency } from '../utils/currency';
 
 export const Categories: React.FC = () => {
     const { companyId } = useParams<{ companyId: string }>();
+    const { addToast } = useToast();
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -32,20 +31,21 @@ export const Categories: React.FC = () => {
         }
     }, [companyId]);
 
-    const loadCategories = async () => {
+    const loadCategories = useCallback(async () => {
         try {
             setLoading(true);
             const data = await api.getCategories(companyId!);
             setCategories(data);
         } catch (err) {
+            addToast('error', 'Erro ao carregar categorias');
             console.error('Failed to load categories', err);
         } finally {
             setLoading(false);
         }
-    };
+    }, [companyId, addToast]);
 
     const validateForm = (): boolean => {
-        const validations: any = {
+        const validations: Record<string, () => { isValid: boolean; error?: string }> = {
             name: () => combineValidations(
                 validateRequired(name, 'Nome'),
                 validateMaxLength(name, 100, 'Nome')
@@ -69,13 +69,13 @@ export const Categories: React.FC = () => {
         clearAllErrors();
     };
 
-    const handleEdit = (category: Category) => {
+    const handleEdit = useCallback((category: Category) => {
         setEditingId(category.id);
         setName(category.name);
         setType(category.type);
         setColor(category.color || '#78716c');
         setBudget(category.budget ? category.budget.toString() : '');
-    };
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -95,27 +95,32 @@ export const Categories: React.FC = () => {
                     budget: budgetValue
                 });
                 setCategories(categories.map(c => c.id === editingId ? updated : c));
+                addToast('success', 'Categoria atualizada com sucesso');
             } else {
                 const newCategory = await api.createCategory(companyId, name, type, color, budgetValue);
                 setCategories([...categories, newCategory]);
+                addToast('success', 'Categoria criada com sucesso');
             }
             resetForm();
         } catch (err) {
+            addToast('error', 'Erro ao salvar categoria');
             console.error('Failed to save category', err);
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
         try {
             await api.deleteCategory(id);
-            setCategories(categories.filter(c => c.id !== id));
+            setCategories(prev => prev.filter(c => c.id !== id));
+            addToast('success', 'Categoria excluída com sucesso');
         } catch (err) {
+            addToast('error', 'Erro ao excluir categoria');
             console.error('Failed to delete category', err);
         }
-    };
+    }, [addToast]);
 
     return (
         <div className="space-y-3 md:space-y-6 mobile-content-padding">
@@ -231,6 +236,14 @@ export const Categories: React.FC = () => {
                                     key={category.id}
                                     className="group hover:bg-stone-50/50 cursor-pointer transition-colors"
                                     onClick={() => handleEdit(category)}
+                                    tabIndex={0}
+                                    role="button"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            handleEdit(category);
+                                        }
+                                    }}
                                 >
                                     <td className="px-6 py-4">
                                         <div
@@ -282,6 +295,14 @@ export const Categories: React.FC = () => {
                             key={category.id}
                             className="bg-white/70 border border-stone-100 rounded-lg p-3 active:bg-stone-50 transition-colors"
                             onClick={() => handleEdit(category)}
+                            tabIndex={0}
+                            role="button"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    handleEdit(category);
+                                }
+                            }}
                         >
                             <div className="flex items-center gap-2.5">
                                 <div

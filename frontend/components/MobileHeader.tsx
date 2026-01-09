@@ -17,6 +17,7 @@ export const MobileHeader: React.FC<Props> = ({ title, showBack, onBack, showNot
             {showBack && (
               <button
                 onClick={onBack}
+                aria-label="Voltar"
                 className="p-1 -ml-1 rounded-md active:bg-stone-100 transition-colors"
               >
                 <ChevronLeft size={18} className="text-stone-600" />
@@ -25,7 +26,7 @@ export const MobileHeader: React.FC<Props> = ({ title, showBack, onBack, showNot
             <h1 className="text-sm font-semibold text-stone-900">{title}</h1>
           </div>
           {showNotifications && (
-            <button className="p-1.5 rounded-md active:bg-stone-100 transition-colors">
+            <button aria-label="Notificações" className="p-1.5 rounded-md active:bg-stone-100 transition-colors">
               <Bell size={16} className="text-stone-500" />
             </button>
           )}

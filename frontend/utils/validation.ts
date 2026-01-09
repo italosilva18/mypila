@@ -10,7 +10,7 @@ export interface ValidationResult {
 /**
  * Validates required field
  */
-export const validateRequired = (value: any, fieldName: string): ValidationResult => {
+export const validateRequired = (value: unknown, fieldName: string): ValidationResult => {
   if (value === null || value === undefined || value === '') {
     return {
       isValid: false,

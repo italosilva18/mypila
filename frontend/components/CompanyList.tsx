@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Company } from '../types';
 import { api } from '../services/api';
@@ -67,14 +67,14 @@ export const CompanyList: React.FC = () => {
         }
     };
 
-    const handleEditClick = (e: React.MouseEvent, company: Company) => {
+    const handleEditClick = useCallback((e: React.MouseEvent, company: Company) => {
         e.preventDefault();
         e.stopPropagation();
         setEditingCompany(company);
         setIsModalOpen(true);
-    };
+    }, []);
 
-    const handleDeleteClick = async (e: React.MouseEvent, company: Company) => {
+    const handleDeleteClick = useCallback(async (e: React.MouseEvent, company: Company) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -84,13 +84,13 @@ export const CompanyList: React.FC = () => {
 
         try {
             await api.deleteCompany(company.id);
-            setCompanies(companies.filter(c => c.id !== company.id));
+            setCompanies(prev => prev.filter(c => c.id !== company.id));
             addToast('success', 'Ambiente excluído com sucesso!');
         } catch (err) {
             console.error('Failed to delete company', err);
             addToast('error', 'Erro ao excluir ambiente. Tente novamente.');
         }
-    };
+    }, [addToast]);
 
     const handleSaveCompany = async (name: string) => {
         if (!editingCompany) return;

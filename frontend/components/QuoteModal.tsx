@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Save, Plus, Trash2, Loader2 } from 'lucide-react';
 import { Quote, Category, CreateQuoteRequest } from '../types';
 import { api } from '../services/api';
 import { useFormValidation } from '../hooks/useFormValidation';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from './ErrorMessage';
+import { formatCurrency } from '../utils/currency';
 
 interface QuoteItemForm {
     id: string;
@@ -23,13 +25,17 @@ interface Props {
     companyId: string;
 }
 
-const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
 export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, categories, companyId }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { validateFields, getError, hasError, clearAllErrors } = useFormValidation();
+
+    // Handle Escape key to close modal
+    const handleClose = useCallback(() => {
+        clearAllErrors();
+        onClose();
+    }, [clearAllErrors, onClose]);
+
+    useEscapeKey(handleClose, isOpen);
 
     // Client data
     const [clientName, setClientName] = useState('');
@@ -78,7 +84,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         }
     }, [quote, isOpen]);
 
-    const resetForm = () => {
+    const resetForm = useCallback(() => {
         setClientName('');
         setClientEmail('');
         setClientPhone('');
@@ -97,21 +103,19 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         setValidUntil(defaultDate.toISOString().split('T')[0]);
         setNotes('');
         clearAllErrors();
-    };
+    }, [clearAllErrors]);
 
-    const addItem = () => {
-        setItems([...items, { id: crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
-    };
+    const addItem = useCallback(() => {
+        setItems(prev => [...prev, { id: crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
+    }, []);
 
-    const removeItem = (id: string) => {
-        if (items.length > 1) {
-            setItems(items.filter(item => item.id !== id));
-        }
-    };
+    const removeItem = useCallback((id: string) => {
+        setItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
+    }, []);
 
-    const updateItem = (id: string, field: keyof QuoteItemForm, value: string) => {
-        setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
-    };
+    const updateItem = useCallback((id: string, field: keyof QuoteItemForm, value: string) => {
+        setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+    }, []);
 
     const { subtotal, total, discountValue } = useMemo(() => {
         const sub = items.reduce((acc, item) => {
@@ -135,7 +139,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         return { subtotal: sub, total: Math.max(0, tot), discountValue: discVal };
     }, [items, discount, discountType]);
 
-    const validateForm = (): boolean => {
+    const validateForm = useCallback((): boolean => {
         const validations: Record<string, () => { isValid: boolean; error?: string }> = {
             clientName: () => combineValidations(
                 validateRequired(clientName, 'Nome do cliente'),
@@ -159,9 +163,9 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         });
 
         return validateFields(validations);
-    };
+    }, [clientName, title, validUntil, items, validateFields]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (!validateForm()) return;
 
@@ -203,7 +207,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [validateForm, clientName, clientEmail, clientPhone, clientDocument, clientAddress, clientCity, clientState, clientZipCode, title, description, items, discount, discountType, validUntil, notes, quote, companyId, onSave]);
 
     if (!isOpen) return null;
 
@@ -211,13 +215,18 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-stone-900/50 backdrop-blur-sm">
-            <div className="bg-white border-0 md:border border-stone-200 rounded-none md:rounded-2xl w-full h-full md:h-auto md:max-w-4xl md:max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="quote-modal-title"
+                className="bg-white border-0 md:border border-stone-200 rounded-none md:rounded-2xl w-full h-full md:h-auto md:max-w-4xl md:max-h-[90vh] shadow-2xl overflow-hidden flex flex-col"
+            >
                 {/* Header */}
                 <div className="flex justify-between items-center p-4 md:p-6 border-b border-stone-200 bg-stone-50 sticky top-0 z-10">
-                    <h3 className="text-lg md:text-xl font-bold text-stone-900">
+                    <h3 id="quote-modal-title" className="text-lg md:text-xl font-bold text-stone-900">
                         {quote ? 'Editar Orcamento' : 'Novo Orcamento'}
                     </h3>
-                    <button onClick={onClose} className="text-stone-400 hover:text-stone-700 transition-colors p-2 -mr-2 rounded-lg">
+                    <button onClick={handleClose} className="text-stone-400 hover:text-stone-700 transition-colors p-2 -mr-2 rounded-lg" aria-label="Fechar modal">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -519,7 +528,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
                     <div className="flex gap-3">
                         <button
                             type="button"
-                            onClick={onClose}
+                            onClick={handleClose}
                             className="flex-1 py-3 text-stone-600 bg-stone-200 hover:bg-stone-300 rounded-xl font-medium transition-colors"
                         >
                             Cancelar

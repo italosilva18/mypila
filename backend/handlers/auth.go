@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,20 +21,48 @@ import (
 
 const userCollection = "users"
 
+// JWT expiration times - shorter for production security
+var (
+	accessTokenExpiry  = 30 * time.Minute  // Short-lived access token
+	refreshTokenExpiry = 7 * 24 * time.Hour // Longer refresh token (future use)
+)
+
+func init() {
+	// Allow override via environment for development convenience
+	if os.Getenv("GO_ENV") == "development" {
+		accessTokenExpiry = 24 * time.Hour // Longer for development
+	}
+}
+
+// logSecurityEvent logs security-related events for auditing
+func logSecurityEvent(eventType, email, ip, userAgent, result string) {
+	log.Printf("[SECURITY] %s | email=%s | ip=%s | ua=%s | result=%s",
+		eventType, email, ip, userAgent, result)
+}
+
 func Register(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Capture request metadata for security logging
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
 
 	var req models.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
 	}
 
+	// Normalizar email para lowercase antes de validar
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
 	// Validações
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Name, "name"),
+		helpers.ValidateMaxLength(req.Name, "name", 100), // Limite razoável para nomes
 		helpers.ValidateEmail(req.Email),
 		helpers.ValidateMinLength(req.Password, "password", 6),
+		helpers.ValidateMaxLength(req.Password, "password", 72), // Limite do bcrypt
 		helpers.ValidateNoScriptTags(req.Name, "name"),
 		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),
@@ -71,14 +102,18 @@ func Register(c *fiber.Ctx) error {
 
 	_, err = collection.InsertOne(ctx, user)
 	if err != nil {
+		logSecurityEvent("REGISTER_FAILED", req.Email, ip, userAgent, "db_error")
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar usuário"})
 	}
 
 	// Generate Token
 	token, err := generateToken(user)
 	if err != nil {
+		logSecurityEvent("REGISTER_FAILED", req.Email, ip, userAgent, "token_error")
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao gerar token"})
 	}
+
+	logSecurityEvent("REGISTER_SUCCESS", req.Email, ip, userAgent, "success")
 
 	return c.Status(201).JSON(models.AuthResponse{
 		Token: token,
@@ -90,18 +125,27 @@ func Login(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Capture request metadata for security logging
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+
 	var req models.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
 	}
 
+	// Normalizar email para lowercase antes de validar
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
 	// Validações
 	errors := helpers.CollectErrors(
 		helpers.ValidateEmail(req.Email),
 		helpers.ValidateRequired(req.Password, "password"),
+		helpers.ValidateMaxLength(req.Password, "password", 72), // Limite do bcrypt
 	)
 
 	if helpers.HasErrors(errors) {
+		logSecurityEvent("LOGIN_FAILED", req.Email, ip, userAgent, "validation_error")
 		return helpers.SendValidationErrors(c, errors)
 	}
 
@@ -110,20 +154,25 @@ func Login(c *fiber.Ctx) error {
 	var user models.User
 	err := collection.FindOne(ctx, bson.M{"email": req.Email}).Decode(&user)
 	if err != nil {
+		logSecurityEvent("LOGIN_FAILED", req.Email, ip, userAgent, "user_not_found")
 		return c.Status(401).JSON(fiber.Map{"error": "Credenciais inválidas"})
 	}
 
 	// Check password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
+		logSecurityEvent("LOGIN_FAILED", req.Email, ip, userAgent, "invalid_password")
 		return c.Status(401).JSON(fiber.Map{"error": "Credenciais inválidas"})
 	}
 
 	// Generate Token
 	token, err := generateToken(user)
 	if err != nil {
+		logSecurityEvent("LOGIN_FAILED", req.Email, ip, userAgent, "token_error")
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao gerar token"})
 	}
+
+	logSecurityEvent("LOGIN_SUCCESS", req.Email, ip, userAgent, "success")
 
 	return c.JSON(models.AuthResponse{
 		Token: token,
@@ -172,7 +221,8 @@ func generateToken(user models.User) (string, error) {
 	claims := jwt.MapClaims{
 		"userId": user.ID.Hex(),
 		"email":  user.Email,
-		"exp":    time.Now().Add(time.Hour * 72).Unix(),
+		"exp":    time.Now().Add(accessTokenExpiry).Unix(),
+		"iat":    time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

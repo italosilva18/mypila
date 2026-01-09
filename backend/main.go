@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 
 	"m2m-backend/config"
 	"m2m-backend/database"
@@ -45,35 +48,59 @@ func main() {
 		AppName: "M2M Financeiro API",
 	})
 
+	// Recover middleware - previne que panics derrubem o servidor
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
+
+	// Request ID middleware - para rastreamento de requisicoes
+	app.Use(requestid.New())
+
+	// Compression middleware - reduz tamanho das respostas
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
+
 	// Security Headers Middleware - Protection against common web vulnerabilities
 	app.Use(func(c *fiber.Ctx) error {
+		env := os.Getenv("GO_ENV")
+
 		// Prevent clickjacking attacks by disallowing iframe embedding
 		c.Set("X-Frame-Options", "DENY")
-		
+
 		// Prevent MIME-type sniffing
 		c.Set("X-Content-Type-Options", "nosniff")
-		
+
 		// Enable XSS filter built into most browsers
 		c.Set("X-XSS-Protection", "1; mode=block")
-		
+
 		// Control how much referrer information should be included with requests
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		
+
 		// Restrict which features and APIs can be used in the browser
 		c.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		
+
 		// Content Security Policy - restrict resources the browser can load
-		c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'")
-		
-		// Enforce HTTPS (Strict-Transport-Security)
-		// Note: Only enable in production with valid SSL certificate
-		// c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-		
+		// Using nonce-based CSP would be ideal, but for now we use strict policy without unsafe-inline
+		if env == "production" {
+			c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		} else {
+			// More permissive CSP for development (allows hot reload, dev tools)
+			c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:")
+		}
+
+		// Enforce HTTPS (Strict-Transport-Security) - ONLY in production with SSL
+		if env == "production" {
+			c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		}
+
 		return c.Next()
 	})
 
-	// Global middleware
-	app.Use(logger.New())
+	// Global middleware - Logger com Request ID para rastreamento
+	app.Use(logger.New(logger.Config{
+		Format: "[${time}] ${locals:requestid} ${status} - ${method} ${path} ${latency}\n",
+	}))
 
 	// CORS configuration - restrict to known origins
 	corsOrigins := os.Getenv("CORS_ORIGINS")
@@ -186,8 +213,11 @@ func main() {
 	quoteTemplates.Put("/:id", handlers.UpdateQuoteTemplate)
 	quoteTemplates.Delete("/:id", handlers.DeleteQuoteTemplate)
 
-	// Seed route (for initial data)
-	api.Post("/seed", handlers.SeedTransactions)
+	// Seed route (for initial data) - ONLY in explicit development mode
+	if os.Getenv("GO_ENV") == "development" {
+		api.Post("/seed", handlers.SeedTransactions)
+		log.Println("[DEV] Seed endpoint enabled at POST /api/seed")
+	}
 
 	// Get port from environment
 	port := os.Getenv("PORT")

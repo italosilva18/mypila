@@ -17,7 +17,21 @@ dist-ssr
 # Environment files
 *.local
 .env
+.env.*
 !.env.example
+!.env.production.example
+
+# Security - Certificates and Keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Backups
+*.backup
+*.bak
+backups/
 
 # Editor directories and files
 .vscode/*

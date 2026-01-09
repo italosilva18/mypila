@@ -103,6 +103,7 @@ export const Sidebar: React.FC = () => {
                         onClick={handleLogout}
                         className="text-stone-400 hover:text-white transition-colors"
                         title="Sair"
+                        aria-label="Sair da conta"
                     >
                         <LogOut className="w-5 h-5" />
                     </button>

@@ -120,9 +120,9 @@ func (r *CompanyRepository) DeleteRelatedTransactions(ctx context.Context, compa
 }
 
 // DeleteRelatedCategories removes all categories associated with a company
-func (r *CompanyRepository) DeleteRelatedCategories(ctx context.Context, companyIDStr string) error {
+func (r *CompanyRepository) DeleteRelatedCategories(ctx context.Context, companyID primitive.ObjectID) error {
 	categoriesCollection := database.GetCollection("categories")
-	_, err := categoriesCollection.DeleteMany(ctx, bson.M{"companyId": companyIDStr})
+	_, err := categoriesCollection.DeleteMany(ctx, bson.M{"companyId": companyID})
 	if err != nil {
 		return NewRepositoryError("DeleteRelatedCategories", err)
 	}
@@ -130,9 +130,9 @@ func (r *CompanyRepository) DeleteRelatedCategories(ctx context.Context, company
 }
 
 // DeleteRelatedRecurring removes all recurring transactions associated with a company
-func (r *CompanyRepository) DeleteRelatedRecurring(ctx context.Context, companyIDStr string) error {
+func (r *CompanyRepository) DeleteRelatedRecurring(ctx context.Context, companyID primitive.ObjectID) error {
 	recurringCollection := database.GetCollection("recurring")
-	_, err := recurringCollection.DeleteMany(ctx, bson.M{"companyId": companyIDStr})
+	_, err := recurringCollection.DeleteMany(ctx, bson.M{"companyId": companyID})
 	if err != nil {
 		return NewRepositoryError("DeleteRelatedRecurring", err)
 	}
@@ -149,18 +149,23 @@ func (r *CompanyRepository) ExistsByID(ctx context.Context, id primitive.ObjectI
 }
 
 // ValidateOwnership checks if a company belongs to a specific user
+// Returns the company if found and owned by user
+// Returns ErrNotFound if company doesn't exist
+// Returns ErrUnauthorized if company exists but belongs to another user
 func (r *CompanyRepository) ValidateOwnership(ctx context.Context, companyID, userID primitive.ObjectID) (*models.Company, error) {
+	// First, check if company exists
 	var company models.Company
-	err := r.collection.FindOne(ctx, bson.M{
-		"_id":    companyID,
-		"userId": userID,
-	}).Decode(&company)
-
+	err := r.collection.FindOne(ctx, bson.M{"_id": companyID}).Decode(&company)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, nil // Not found or not owned by user
+			return nil, ErrNotFound // Company doesn't exist
 		}
 		return nil, NewRepositoryError("ValidateOwnership", err)
+	}
+
+	// Company exists, check ownership
+	if company.UserID != userID {
+		return nil, ErrUnauthorized // Company belongs to another user
 	}
 
 	return &company, nil
