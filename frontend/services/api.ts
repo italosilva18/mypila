@@ -133,9 +133,9 @@ class ApiService {
 
   // Transactions
   async getTransactions(companyId: string): Promise<Transaction[]> {
-    // Backend returns paginated response {Data: Transaction[], Pagination: {...}}
-    const response = await this.request<{ Data: Transaction[]; Pagination: { Page: number; Limit: number; Total: number; TotalPages: number } }>(`/transactions?companyId=${companyId}`);
-    return response.Data || [];
+    // Backend returns paginated response {data: Transaction[], pagination: {...}}
+    const response = await this.request<{ data: Transaction[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/transactions?companyId=${companyId}`);
+    return response.data || [];
   }
 
   async getTransaction(id: string): Promise<Transaction> {
