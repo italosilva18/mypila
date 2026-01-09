@@ -25,7 +25,7 @@ const COLORS = {
   [Status.OPEN]: '#d97706', // amber-600
 };
 
-export const FinancialChart: React.FC<Props> = ({ transactions, categories = [] }) => {
+export const FinancialChart = React.memo<Props>(({ transactions, categories = [] }) => {
 
   // Memoized helper to find category color - prevents recreation on every render
   const getCategoryColor = useCallback((categoryName: string) => {
@@ -129,4 +129,5 @@ export const FinancialChart: React.FC<Props> = ({ transactions, categories = [] 
       </div>
     </div>
   );
-};
+});
+FinancialChart.displayName = 'FinancialChart';

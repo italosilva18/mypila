@@ -23,7 +23,7 @@ export const BottomNavigation: React.FC = () => {
   const isActive = (path: string) => location.pathname.endsWith(path);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden" role="navigation" aria-label="Navegação principal">
       {/* Background com blur */}
       <div className="absolute inset-0 bg-white/80 backdrop-blur-xl border-t border-stone-200/50" />
 
@@ -33,6 +33,8 @@ export const BottomNavigation: React.FC = () => {
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
+            aria-label={item.label}
+            aria-current={isActive(item.path) ? 'page' : undefined}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-lg transition-all duration-200 min-w-[56px] ${
               isActive(item.path)
                 ? 'text-stone-900'

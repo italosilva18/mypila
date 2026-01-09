@@ -8,8 +8,12 @@ db.createCollection('transactions', {
   validator: {
     $jsonSchema: {
       bsonType: 'object',
-      required: ['month', 'year', 'amount', 'category', 'status'],
+      required: ['companyId', 'month', 'year', 'amount', 'category', 'status'],
       properties: {
+        companyId: {
+          bsonType: 'objectId',
+          description: 'Company ID (required)'
+        },
         month: {
           bsonType: 'string',
           description: 'Month name or reference (required)'
@@ -24,8 +28,7 @@ db.createCollection('transactions', {
         },
         category: {
           bsonType: 'string',
-          enum: ['Salário', 'Férias', 'Custos de IA', 'Custo de Docker'],
-          description: 'Category (required)'
+          description: 'Category name (required)'
         },
         status: {
           bsonType: 'string',
@@ -42,7 +45,8 @@ db.createCollection('transactions', {
 });
 
 // Create indexes for better query performance
-db.transactions.createIndex({ month: 1, year: 1 });
+db.transactions.createIndex({ companyId: 1 });
+db.transactions.createIndex({ companyId: 1, month: 1, year: 1 });
 db.transactions.createIndex({ category: 1 });
 db.transactions.createIndex({ status: 1 });
 

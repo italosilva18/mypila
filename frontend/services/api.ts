@@ -39,6 +39,14 @@ class ApiService {
     });
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - token expired or invalid
+      if (response.status === 401) {
+        this.setToken(null);
+        // Redirect to login page
+        window.location.href = '/login';
+        throw new Error('Invalid or expired token');
+      }
+
       const error = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }

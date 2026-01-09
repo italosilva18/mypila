@@ -2,7 +2,18 @@ package repositories
 
 import (
 	"context"
+	"errors"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+// Common repository errors
+var (
+	// ErrNotFound is returned when a document is not found
+	ErrNotFound = errors.New("document not found")
+
+	// ErrUnauthorized is returned when user is not authorized to access a resource
+	ErrUnauthorized = errors.New("unauthorized access")
 )
 
 // BaseRepository defines common database operations

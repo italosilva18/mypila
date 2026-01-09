@@ -8,6 +8,34 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 )
 
+// Pre-compiled regex patterns and policies for better performance (singleton)
+var (
+	strictPolicy      = bluemonday.StrictPolicy()
+	whitespaceRegex   = regexp.MustCompile(`\s+`)
+	alphanumericRegex = regexp.MustCompile(`[^\p{L}\p{N}\s\.\-_,]`)
+	scriptTagRegex    = regexp.MustCompile(`(?i)<script|javascript:|onerror=|onload=|onclick=`)
+	mongoOperatorRegex = regexp.MustCompile(`\$\w+`)
+)
+
+// Pre-compiled SQL injection patterns
+var sqlPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE)\b`),
+	regexp.MustCompile(`(?i)\b(UNION|OR|AND)\b.*=.*`),
+	regexp.MustCompile(`--`),
+	regexp.MustCompile(`/\*|\*/`),
+	regexp.MustCompile(`;.*\b(SELECT|INSERT|UPDATE|DELETE)\b`),
+	regexp.MustCompile(`\bxp_\w+`),
+	regexp.MustCompile(`\bsp_\w+`),
+}
+
+// Pre-compiled path traversal patterns
+var pathPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\.\.[\\/]`),
+	regexp.MustCompile(`[\\/]\.\.`),
+	regexp.MustCompile(`%2e%2e`),
+	regexp.MustCompile(`%252e%252e`),
+}
+
 // ===============================================
 // SECURITY: XSS Prevention & HTML Sanitization
 // ===============================================
@@ -19,8 +47,8 @@ func SanitizeString(input string) string {
 		return input
 	}
 
-	// Create a strict policy that strips ALL HTML
-	policy := bluemonday.StrictPolicy()
+	// Use pre-created strict policy (singleton)
+	policy := strictPolicy
 
 	// Sanitize the input
 	sanitized := policy.Sanitize(input)
@@ -70,9 +98,8 @@ func SanitizeAlphanumeric(input string) string {
 		return input
 	}
 
-	// Allow letters (including unicode), numbers, spaces, and basic punctuation
-	reg := regexp.MustCompile(`[^\p{L}\p{N}\s\.\-_,]`)
-	sanitized := reg.ReplaceAllString(input, "")
+	// Use pre-compiled regex for better performance
+	sanitized := alphanumericRegex.ReplaceAllString(input, "")
 
 	return strings.TrimSpace(sanitized)
 }
@@ -84,20 +111,9 @@ func ValidateSQLInjection(value, fieldName string) *ValidationError {
 		return nil
 	}
 
-	// Common SQL injection patterns
-	sqlPatterns := []string{
-		`(?i)\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE)\b`,
-		`(?i)\b(UNION|OR|AND)\b.*=.*`,
-		`--`,
-		`/\*|\*/`,
-		`;.*\b(SELECT|INSERT|UPDATE|DELETE)\b`,
-		`\bxp_\w+`,
-		`\bsp_\w+`,
-	}
-
+	// Use pre-compiled regex patterns for better performance
 	for _, pattern := range sqlPatterns {
-		matched, _ := regexp.MatchString(pattern, value)
-		if matched {
+		if pattern.MatchString(value) {
 			return &ValidationError{
 				Field:   fieldName,
 				Message: "Conteúdo contém caracteres não permitidos",
@@ -114,11 +130,8 @@ func ValidateNoScriptTags(value, fieldName string) *ValidationError {
 		return nil
 	}
 
-	// Check for script tags (case insensitive)
-	scriptPattern := `(?i)<script|javascript:|onerror=|onload=|onclick=`
-	matched, _ := regexp.MatchString(scriptPattern, value)
-
-	if matched {
+	// Use pre-compiled regex for better performance
+	if scriptTagRegex.MatchString(value) {
 		return &ValidationError{
 			Field:   fieldName,
 			Message: "Conteúdo contém código não permitido",
@@ -134,17 +147,10 @@ func ValidatePathTraversal(value, fieldName string) *ValidationError {
 		return nil
 	}
 
-	// Check for path traversal patterns
-	pathPatterns := []string{
-		`\.\.[\\/]`,
-		`[\\/]\.\.`,
-		`%2e%2e`,
-		`%252e%252e`,
-	}
-
+	// Use pre-compiled regex patterns for better performance
+	lowerValue := strings.ToLower(value)
 	for _, pattern := range pathPatterns {
-		matched, _ := regexp.MatchString(pattern, strings.ToLower(value))
-		if matched {
+		if pattern.MatchString(lowerValue) {
 			return &ValidationError{
 				Field:   fieldName,
 				Message: "Caminho inválido detectado",
@@ -157,8 +163,8 @@ func ValidatePathTraversal(value, fieldName string) *ValidationError {
 
 // normalizeWhitespace replaces multiple whitespace characters with a single space
 func normalizeWhitespace(input string) string {
-	reg := regexp.MustCompile(`\s+`)
-	return reg.ReplaceAllString(input, " ")
+	// Use pre-compiled regex for better performance
+	return whitespaceRegex.ReplaceAllString(input, " ")
 }
 
 // ValidateMongoInjection prevents NoSQL injection by validating MongoDB operators
@@ -167,11 +173,8 @@ func ValidateMongoInjection(value, fieldName string) *ValidationError {
 		return nil
 	}
 
-	// Check for MongoDB operators
-	mongoPattern := `\$\w+`
-	matched, _ := regexp.MatchString(mongoPattern, value)
-
-	if matched {
+	// Use pre-compiled regex for better performance
+	if mongoOperatorRegex.MatchString(value) {
 		return &ValidationError{
 			Field:   fieldName,
 			Message: "Operadores não permitidos detectados",

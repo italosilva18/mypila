@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
@@ -26,11 +27,18 @@ func init() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	// Try Docker port first (27018) with auth, then local (27017) without auth
+	mongoURI := "mongodb://admin:admin123@localhost:27018"
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		// If MongoDB is not available, use a dummy database reference
-		// Tests will skip gracefully
-		return
+		// Try local MongoDB without auth
+		mongoURI = "mongodb://localhost:27017"
+		client, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+		if err != nil {
+			// If MongoDB is not available, use a dummy database reference
+			// Tests will skip gracefully
+			return
+		}
 	}
 
 	database.DB = client.Database("m2m_test_init")
@@ -42,9 +50,22 @@ func setupTestDBForAuth(t *testing.T) func() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	// Try Docker port first (27018) with auth, then local (27017) without auth
+	mongoURI := "mongodb://admin:admin123@localhost:27018"
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		t.Skipf("Skipping test: MongoDB not available - %v", err)
+		// Try local MongoDB without auth
+		mongoURI = "mongodb://localhost:27017"
+		client, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+		if err != nil {
+			t.Skipf("Skipping test: MongoDB not available - %v", err)
+			return nil
+		}
+	}
+
+	// Ping to verify connection
+	if err := client.Ping(ctx, nil); err != nil {
+		t.Skipf("Skipping test: MongoDB not responding - %v", err)
 		return nil
 	}
 
@@ -217,8 +238,11 @@ func TestRegister(t *testing.T) {
 				if err != nil {
 					t.Errorf("Failed to unmarshal error response: %v", err)
 				}
-				if _, exists := errorResp["error"]; !exists {
-					t.Errorf("Expected error field in response")
+				// Check for either "error" (API errors) or "errors" (validation errors)
+				_, hasError := errorResp["error"]
+				_, hasErrors := errorResp["errors"]
+				if !hasError && !hasErrors {
+					t.Errorf("Expected error or errors field in response, got: %s", string(body))
 				}
 			}
 		})
@@ -363,8 +387,11 @@ func TestLogin(t *testing.T) {
 				if err != nil {
 					t.Errorf("Failed to unmarshal error response: %v", err)
 				}
-				if _, exists := errorResp["error"]; !exists {
-					t.Errorf("Expected error field in response")
+				// Check for either "error" (API errors) or "errors" (validation errors)
+				_, hasError := errorResp["error"]
+				_, hasErrors := errorResp["errors"]
+				if !hasError && !hasErrors {
+					t.Errorf("Expected error or errors field in response, got: %s", string(body))
 				}
 			}
 		})
@@ -390,7 +417,7 @@ func TestGetMe(t *testing.T) {
 		"passwordHash": string(hash),
 		"createdAt":    time.Now(),
 	})
-	userID := result.InsertedID
+	userID := result.InsertedID.(primitive.ObjectID)
 
 	tests := []struct {
 		name           string
@@ -400,7 +427,7 @@ func TestGetMe(t *testing.T) {
 	}{
 		{
 			name:           "Valid user ID in context",
-			userIDInCtx:    userID,
+			userIDInCtx:    userID.Hex(), // Pass as string, as expected by the handler
 			expectedStatus: 200,
 			expectUser:     true,
 		},

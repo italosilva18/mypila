@@ -160,12 +160,43 @@ func CreateQuote(c *fiber.Ctx) error {
 		helpers.ValidateNoScriptTags(req.Title, "title"),
 		helpers.ValidateMongoInjection(req.ClientName, "clientName"),
 		helpers.ValidateMongoInjection(req.Title, "title"),
+		helpers.ValidateNonNegative(req.Discount, "discount"),
 	)
 
 	if len(req.Items) == 0 {
 		errors = append(errors, helpers.ValidationError{
 			Field:   "items",
-			Message: "O orçamento deve ter pelo menos um item",
+			Message: "O orcamento deve ter pelo menos um item",
+		})
+	}
+
+	// Validar cada item do orcamento
+	for i, item := range req.Items {
+		if item.Description == "" {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].description", i),
+				Message: "Descricao do item e obrigatoria",
+			})
+		}
+		if item.Quantity <= 0 {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].quantity", i),
+				Message: "Quantidade deve ser maior que zero",
+			})
+		}
+		if item.UnitPrice <= 0 {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].unitPrice", i),
+				Message: "Preco unitario deve ser maior que zero",
+			})
+		}
+	}
+
+	// Validar desconto percentual
+	if req.DiscountType == "PERCENT" && req.Discount > 100 {
+		errors = append(errors, helpers.ValidationError{
+			Field:   "discount",
+			Message: "Desconto percentual deve ser no maximo 100%",
 		})
 	}
 
@@ -322,12 +353,43 @@ func UpdateQuote(c *fiber.Ctx) error {
 		helpers.ValidateMaxLength(req.Title, "title", 200),
 		helpers.ValidateNoScriptTags(req.ClientName, "clientName"),
 		helpers.ValidateNoScriptTags(req.Title, "title"),
+		helpers.ValidateNonNegative(req.Discount, "discount"),
 	)
 
 	if len(req.Items) == 0 {
 		errors = append(errors, helpers.ValidationError{
 			Field:   "items",
-			Message: "O orçamento deve ter pelo menos um item",
+			Message: "O orcamento deve ter pelo menos um item",
+		})
+	}
+
+	// Validar cada item do orcamento
+	for i, item := range req.Items {
+		if item.Description == "" {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].description", i),
+				Message: "Descricao do item e obrigatoria",
+			})
+		}
+		if item.Quantity <= 0 {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].quantity", i),
+				Message: "Quantidade deve ser maior que zero",
+			})
+		}
+		if item.UnitPrice <= 0 {
+			errors = append(errors, helpers.ValidationError{
+				Field:   fmt.Sprintf("items[%d].unitPrice", i),
+				Message: "Preco unitario deve ser maior que zero",
+			})
+		}
+	}
+
+	// Validar desconto percentual
+	if req.DiscountType == "PERCENT" && req.Discount > 100 {
+		errors = append(errors, helpers.ValidationError{
+			Field:   "discount",
+			Message: "Desconto percentual deve ser no maximo 100%",
 		})
 	}
 

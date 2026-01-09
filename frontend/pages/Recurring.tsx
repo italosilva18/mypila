@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Trash2, Plus, RefreshCw, Calendar, Check } from 'lucide-react';
 import { api } from '../services/api';
 import { RecurringTransaction, Category } from '../types';
 import { useDateFilter } from '../contexts/DateFilterContext';
+import { useToast } from '../contexts/ToastContext';
 import { useFormValidation } from '../hooks/useFormValidation';
 import { validateRequired, validateMaxLength, validatePositiveNumber, validateRange, combineValidations } from '../utils/validation';
 import { ErrorMessage } from '../components/ErrorMessage';
@@ -12,6 +13,7 @@ import { formatCurrency } from '../utils/currency';
 export const Recurring: React.FC = () => {
     const { companyId } = useParams<{ companyId: string }>();
     const { month, year } = useDateFilter();
+    const { addToast } = useToast();
     const [rules, setRules] = useState<RecurringTransaction[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export const Recurring: React.FC = () => {
         loadData();
     }, [companyId]);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         if (!companyId) return;
         try {
             setLoading(true);
@@ -46,18 +48,25 @@ export const Recurring: React.FC = () => {
                 setFormData(prev => ({ ...prev, category: fetchedCategories[0].name }));
             }
         } catch (error) {
+            addToast('error', 'Erro ao carregar dados recorrentes');
             console.error('Error loading recurring data', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [companyId, addToast]);
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         if (confirm('Tem certeza que deseja remover esta recorrência?')) {
-            await api.deleteRecurring(id);
-            setRules(rules.filter(r => r.id !== id));
+            try {
+                await api.deleteRecurring(id);
+                setRules(prev => prev.filter(r => r.id !== id));
+                addToast('success', 'Recorrência removida com sucesso');
+            } catch (error) {
+                addToast('error', 'Erro ao remover recorrência');
+                console.error('Error deleting recurring', error);
+            }
         }
-    };
+    }, [addToast]);
 
     const validateForm = (): boolean => {
         return validateFields({
@@ -71,7 +80,7 @@ export const Recurring: React.FC = () => {
         });
     };
 
-    const handleCreate = async (e: React.FormEvent) => {
+    const handleCreate = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (!companyId) return;
 
@@ -87,27 +96,30 @@ export const Recurring: React.FC = () => {
                 category: formData.category,
                 dayOfMonth: Number(formData.dayOfMonth)
             });
-            setRules([...rules, newRule]);
+            setRules(prev => [...prev, newRule]);
             setShowForm(false);
             setFormData({ description: '', amount: '', category: categories[0]?.name || '', dayOfMonth: 1 });
             clearAllErrors();
+            addToast('success', 'Recorrência criada com sucesso');
         } catch (error) {
+            addToast('error', 'Erro ao criar recorrência');
             console.error('Failed to create rule', error);
         }
-    };
+    }, [companyId, formData, categories, validateForm, clearAllErrors, addToast]);
 
-    const handleProcess = async () => {
+    const handleProcess = useCallback(async () => {
         if (!companyId) return;
         try {
             setProcessing(true);
             const result = await api.processRecurring(companyId, month, year);
-            alert(`Processado! ${result.created} novas transações geradas para ${month}/${year}.`);
+            addToast('success', `${result.created} novas transações geradas para ${month}/${year}`);
         } catch (error) {
-            alert('Erro ao processar.');
+            addToast('error', 'Erro ao processar transações recorrentes');
+            console.error('Error processing recurring', error);
         } finally {
             setProcessing(false);
         }
-    };
+    }, [companyId, month, year, addToast]);
 
     const handleFormToggle = () => {
         setShowForm(!showForm);

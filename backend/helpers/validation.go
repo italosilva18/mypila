@@ -8,6 +8,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// Pre-compiled regex patterns for better performance
+var (
+	emailRegex    = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+)
+
 // ValidationError representa um erro de validação com mensagem em português
 type ValidationError struct {
 	Field   string `json:"field"`
@@ -98,8 +104,7 @@ func ValidateEmail(email string) *ValidationError {
 		}
 	}
 
-	// Regex simples para validação de email
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	// Use pre-compiled regex for better performance
 	if !emailRegex.MatchString(email) {
 		return &ValidationError{
 			Field:   "email",
@@ -115,8 +120,7 @@ func ValidateHexColor(color string) *ValidationError {
 		return nil // Cor pode ser opcional
 	}
 
-	// Regex para validar formato #RRGGBB
-	hexColorRegex := regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	// Use pre-compiled regex for better performance
 	if !hexColorRegex.MatchString(color) {
 		return &ValidationError{
 			Field:   "color",
@@ -198,4 +202,88 @@ func CollectErrors(errors ...*ValidationError) []ValidationError {
 // HasErrors verifica se há erros na lista
 func HasErrors(errors []ValidationError) bool {
 	return len(errors) > 0
+}
+
+// ValidateCategoryType valida o tipo de categoria
+func ValidateCategoryType(catType string) *ValidationError {
+	if catType == "" {
+		return nil
+	}
+	catTypeUpper := strings.ToUpper(catType)
+	if catTypeUpper != "EXPENSE" && catTypeUpper != "INCOME" {
+		return &ValidationError{
+			Field:   "type",
+			Message: "Tipo deve ser 'EXPENSE' ou 'INCOME'",
+		}
+	}
+	return nil
+}
+
+// ValidateQuoteStatus valida status do orcamento
+func ValidateQuoteStatus(status string) *ValidationError {
+	validStatuses := []string{"DRAFT", "SENT", "APPROVED", "REJECTED", "EXECUTED"}
+	for _, s := range validStatuses {
+		if status == s {
+			return nil
+		}
+	}
+	return &ValidationError{
+		Field:   "status",
+		Message: "Status invalido",
+	}
+}
+
+// ValidateYear valida se o ano esta dentro de um intervalo valido
+func ValidateYear(year int) *ValidationError {
+	if year < 2000 || year > 2100 {
+		return &ValidationError{
+			Field:   "year",
+			Message: "Ano deve estar entre 2000 e 2100",
+		}
+	}
+	return nil
+}
+
+// ValidateNonNegative valida se um numero e maior ou igual a zero
+func ValidateNonNegative(value float64, fieldName string) *ValidationError {
+	if value < 0 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ser maior ou igual a zero", fieldName),
+		}
+	}
+	return nil
+}
+
+// ValidatePercentage valida se um valor de porcentagem esta entre 0 e 100
+func ValidatePercentage(value float64, fieldName string) *ValidationError {
+	if value < 0 || value > 100 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve estar entre 0 e 100", fieldName),
+		}
+	}
+	return nil
+}
+
+// GetMonthName returns the Portuguese month name for a given month number (1-12)
+func GetMonthName(month int) string {
+	months := map[int]string{
+		1:  "Janeiro",
+		2:  "Fevereiro",
+		3:  "Marco",
+		4:  "Abril",
+		5:  "Maio",
+		6:  "Junho",
+		7:  "Julho",
+		8:  "Agosto",
+		9:  "Setembro",
+		10: "Outubro",
+		11: "Novembro",
+		12: "Dezembro",
+	}
+	if name, ok := months[month]; ok {
+		return name
+	}
+	return ""
 }

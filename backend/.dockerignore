@@ -1,71 +1,37 @@
 # Git
 .git
 .gitignore
-.gitattributes
 
 # Documentation
 *.md
 docs/
-*.txt
-CHANGELOG*
-README*
-LICENSE
 
-# IDE and Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# Docker
+Dockerfile
+docker-compose*.yml
+
+# Environment files
+.env*
+
+# Test files and coverage
+*_test.go
+coverage.out
+coverage.html
 
 # Build artifacts
+bin/
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
-*.test
-*.out
-bin/
-dist/
-build/
-main
-m2m-backend*
 
-# Test files
-*_test.go
-test/
-tests/
-coverage.out
-coverage.html
-*.coverprofile
-
-# Dependencies (will be downloaded in container)
-vendor/
-
-# Environment files
-.env
-.env.*
-!.env.example
-
-# Logs
+# Debug files
 *.log
-logs/
-
-# Temporary files
-tmp/
-temp/
 *.tmp
 
-# OS files
-Thumbs.db
-.DS_Store
-
-# Scripts
-*.sh
-*.bash
-
-# Docker
-Dockerfile*
-docker-compose*
-.dockerignore
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

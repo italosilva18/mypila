@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useToast, Toast } from '../contexts/ToastContext';
 import { X, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
 
-const ToastItem: React.FC<{ toast: Toast }> = ({ toast }) => {
+const ToastItem = React.memo<{ toast: Toast }>(({ toast }) => {
   const { removeToast } = useToast();
   const [isExiting, setIsExiting] = useState(false);
 
@@ -68,7 +68,8 @@ const ToastItem: React.FC<{ toast: Toast }> = ({ toast }) => {
       </button>
     </div>
   );
-};
+});
+ToastItem.displayName = 'ToastItem';
 
 export const ToastContainer: React.FC = () => {
   const { toasts } = useToast();

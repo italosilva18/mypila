@@ -9,15 +9,14 @@ import {
     ResponsiveContainer
 } from 'recharts';
 import { Transaction, Status } from '../types';
+import { MONTHS } from '../utils/constants';
 
 interface Props {
     transactions: Transaction[];
     year: number;
 }
 
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-
-export const TrendChart: React.FC<Props> = ({ transactions, year }) => {
+export const TrendChart = React.memo<Props>(({ transactions, year }) => {
     // Aggregate data for the whole year
     const data = useMemo(() => {
         return MONTHS.map(month => {
@@ -68,4 +67,5 @@ export const TrendChart: React.FC<Props> = ({ transactions, year }) => {
             </div>
         </div>
     );
-};
+});
+TrendChart.displayName = 'TrendChart';

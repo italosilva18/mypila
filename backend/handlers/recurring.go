@@ -66,7 +66,9 @@ func CreateRecurring(c *fiber.Ctx) error {
 	}
 
 	collection := database.GetCollection("recurring")
-	_, err = collection.InsertOne(context.Background(), rule)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = collection.InsertOne(ctx, rule)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar regra recorrente"})
 	}
@@ -131,12 +133,14 @@ func DeleteRecurring(c *fiber.Ctx) error {
 	}
 
 	collection := database.GetCollection("recurring")
-	_, err = collection.DeleteOne(context.Background(), bson.M{"_id": objID})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete"})
 	}
-	return c.SendStatus(200)
+	return c.SendStatus(204)
 }
 
 // ProcessRecurring checks and creates transactions for the given month/year
@@ -147,6 +151,18 @@ func ProcessRecurring(c *fiber.Ctx) error {
 
 	if companyID == "" || month == "" || year == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Missing params"})
+	}
+
+	// Validar mes
+	if err := helpers.ValidateMonth(month); err != nil {
+		return helpers.SendValidationError(c, err.Field, err.Message)
+	}
+
+	// Validar ano
+	var yearInt int
+	fmt.Sscanf(year, "%d", &yearInt)
+	if err := helpers.ValidateYear(yearInt); err != nil {
+		return helpers.SendValidationError(c, err.Field, err.Message)
 	}
 
 	// Convert companyID string to ObjectID
@@ -185,10 +201,6 @@ func ProcessRecurring(c *fiber.Ctx) error {
 		// Check if transaction already exists for this rule + month + year
 		// We use Description + Amount + Month + Year as a pseudo-unique key check
 		// Or ideally store "SourceRuleID" in Transaction, but for now simple check:
-		// Fix Year parsing
-		var yearInt int
-		fmt.Sscanf(year, "%d", &yearInt)
-
 		filter := bson.M{
 			"companyId":   companyObjID,
 			"description": rule.Description,
@@ -210,7 +222,10 @@ func ProcessRecurring(c *fiber.Ctx) error {
 				Month:       month,
 				Year:        yearInt,
 			}
-			transColl.InsertOne(ctx, newTrans)
+			if _, err := transColl.InsertOne(ctx, newTrans); err != nil {
+				// Log error but continue processing other rules
+				continue
+			}
 			createdCount++
 		}
 	}

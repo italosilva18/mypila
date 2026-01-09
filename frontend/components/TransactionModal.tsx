@@ -1,25 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
-import { Category, Status, Transaction } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Save, Loader2 } from 'lucide-react';
+import { Category, CategoryType, Status, Transaction } from '../types';
 import { useFormValidation } from '../hooks/useFormValidation';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from './ErrorMessage';
+import { MONTHS as BASE_MONTHS } from '../utils/constants';
+
+const NEW_CATEGORY_VALUE = '__NEW_CATEGORY__';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSave: (transaction: Omit<Transaction, 'id'>) => void;
+  onCreateCategory?: (name: string, type: CategoryType) => Promise<Category>;
   transaction?: Transaction | null;
   categories: Category[];
   companyId: string;
 }
 
-const MONTHS = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro', 'Acumulado'
-];
+const MONTHS = [...BASE_MONTHS, 'Acumulado'];
 
-export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, transaction, categories, companyId }) => {
+export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onCreateCategory, transaction, categories, companyId }) => {
   const [formData, setFormData] = useState({
     month: 'Janeiro',
     year: new Date().getFullYear(),
@@ -28,8 +30,23 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, tra
     status: Status.OPEN,
     description: ''
   });
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryType, setNewCategoryType] = useState<CategoryType>(CategoryType.EXPENSE);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { validateFields, getError, hasError, hasErrors, clearAllErrors } = useFormValidation();
+
+  // Handle Escape key to close modal
+  const handleClose = useCallback(() => {
+    clearAllErrors();
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+    setNewCategoryType(CategoryType.EXPENSE);
+    onClose();
+  }, [clearAllErrors, onClose]);
+
+  useEscapeKey(handleClose, isOpen);
 
   useEffect(() => {
     if (transaction) {
@@ -52,39 +69,63 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, tra
         description: ''
       });
     }
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+    setNewCategoryType(CategoryType.EXPENSE);
     clearAllErrors();
   }, [transaction, isOpen, categories, clearAllErrors]);
 
-  if (!isOpen) return null;
-
-  const validateForm = (): boolean => {
-    return validateFields({
+  const validateForm = useCallback((): boolean => {
+    const validations: Record<string, () => { isValid: boolean; error?: string }> = {
       description: () => combineValidations(
         validateRequired(formData.description, 'Descrição'),
         validateMaxLength(formData.description, 200, 'Descrição')
       ),
       amount: () => validatePositiveNumber(formData.amount, 'Valor'),
-      category: () => validateRequired(formData.category, 'Categoria'),
       month: () => validateRequired(formData.month, 'Mês'),
       year: () => validateRequired(formData.year, 'Ano')
-    });
-  };
+    };
 
-  const handleSubmit = (e: React.FormEvent) => {
+    // Validate category or new category name
+    if (isCreatingCategory) {
+      validations.newCategoryName = () => combineValidations(
+        validateRequired(newCategoryName, 'Nome da categoria'),
+        validateMaxLength(newCategoryName, 100, 'Nome da categoria')
+      );
+    } else {
+      validations.category = () => validateRequired(formData.category, 'Categoria');
+    }
+
+    return validateFields(validations);
+  }, [validateFields, formData, isCreatingCategory, newCategoryName]);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
       return;
     }
 
-    onSave({ ...formData, companyId });
-    onClose();
-  };
+    setIsSubmitting(true);
+    try {
+      let categoryName = formData.category;
 
-  const handleClose = () => {
-    clearAllErrors();
-    onClose();
-  };
+      // If creating a new category, create it first
+      if (isCreatingCategory && onCreateCategory) {
+        const newCategory = await onCreateCategory(newCategoryName.trim(), newCategoryType);
+        categoryName = newCategory.name;
+      }
+
+      onSave({ ...formData, category: categoryName, companyId });
+      onClose();
+    } catch (error) {
+      console.error('Failed to save transaction', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [validateForm, formData, companyId, onSave, onClose, isCreatingCategory, onCreateCategory, newCategoryName, newCategoryType]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-stone-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -139,19 +180,68 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, tra
               <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
                 Categoria <span className="text-red-500">*</span>
               </label>
-              <select
-                className={`w-full px-3 md:px-4 py-3 md:py-2.5 bg-stone-50 border ${
-                  hasError('category') ? 'border-red-500 focus:ring-red-400' : 'border-stone-200 focus:ring-stone-400'
-                } rounded-lg md:rounded-xl text-sm md:text-base text-stone-900 focus:outline-none focus:ring-2 transition-colors min-h-[44px]`}
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              >
-                <option value="" disabled>Selecione...</option>
-                {categories.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-              <ErrorMessage error={getError('category')} />
+              {!isCreatingCategory ? (
+                <>
+                  <select
+                    className={`w-full px-3 md:px-4 py-3 md:py-2.5 bg-stone-50 border ${
+                      hasError('category') ? 'border-red-500 focus:ring-red-400' : 'border-stone-200 focus:ring-stone-400'
+                    } rounded-lg md:rounded-xl text-sm md:text-base text-stone-900 focus:outline-none focus:ring-2 transition-colors min-h-[44px]`}
+                    value={formData.category}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_CATEGORY_VALUE) {
+                        setIsCreatingCategory(true);
+                        setFormData({ ...formData, category: '' });
+                      } else {
+                        setFormData({ ...formData, category: e.target.value });
+                      }
+                    }}
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                    {onCreateCategory && (
+                      <option value={NEW_CATEGORY_VALUE} className="font-medium text-stone-600">+ Nova categoria</option>
+                    )}
+                  </select>
+                  <ErrorMessage error={getError('category')} />
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className={`flex-1 px-3 md:px-4 py-3 md:py-2.5 bg-stone-50 border ${
+                        hasError('newCategoryName') ? 'border-red-500 focus:ring-red-400' : 'border-stone-200 focus:ring-stone-400'
+                      } rounded-lg md:rounded-xl text-sm md:text-base text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 transition-colors min-h-[44px]`}
+                      placeholder="Nome da categoria"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingCategory(false);
+                        setNewCategoryName('');
+                        setFormData({ ...formData, category: categories.length > 0 ? categories[0].name : '' });
+                      }}
+                      className="px-3 py-2 text-stone-500 hover:text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
+                      title="Cancelar"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <select
+                    className="w-full px-3 md:px-4 py-2 md:py-2 bg-stone-50 border border-stone-200 rounded-lg md:rounded-xl text-xs md:text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-400"
+                    value={newCategoryType}
+                    onChange={(e) => setNewCategoryType(e.target.value as CategoryType)}
+                  >
+                    <option value={CategoryType.EXPENSE}>Despesa</option>
+                    <option value={CategoryType.INCOME}>Receita</option>
+                  </select>
+                  <ErrorMessage error={getError('newCategoryName')} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -203,15 +293,19 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, tra
 
           <button
             type="submit"
-            disabled={hasErrors()}
+            disabled={hasErrors() || isSubmitting}
             className={`w-full mt-4 font-medium py-3.5 md:py-3 rounded-lg md:rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm md:text-base min-h-[48px] ${
-              hasErrors()
+              hasErrors() || isSubmitting
                 ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
                 : 'bg-stone-800 active:bg-stone-700 md:hover:bg-stone-700 text-white shadow-stone-900/20 active:scale-[0.98]'
             }`}
           >
-            <Save className="w-4 h-4" />
-            {transaction ? 'Salvar Alterações' : 'Salvar Transação'}
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {isSubmitting ? 'Salvando...' : (transaction ? 'Salvar Alterações' : 'Salvar Transação')}
           </button>
         </form>
       </div>

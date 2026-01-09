@@ -94,6 +94,12 @@ func (s *CompanyService) UpdateCompany(companyID, userID primitive.ObjectID, req
 	// Validate ownership
 	company, err := s.repo.ValidateOwnership(ctx, companyID, userID)
 	if err != nil {
+		if err == repositories.ErrNotFound {
+			return nil, nil, ErrCompanyNotFound
+		}
+		if err == repositories.ErrUnauthorized {
+			return nil, nil, ErrUnauthorized
+		}
 		return nil, nil, err
 	}
 	if company == nil {
@@ -139,6 +145,12 @@ func (s *CompanyService) DeleteCompany(companyID, userID primitive.ObjectID) err
 	// Validate ownership
 	company, err := s.repo.ValidateOwnership(ctx, companyID, userID)
 	if err != nil {
+		if err == repositories.ErrNotFound {
+			return ErrCompanyNotFound
+		}
+		if err == repositories.ErrUnauthorized {
+			return ErrUnauthorized
+		}
 		return err
 	}
 	if company == nil {
@@ -146,23 +158,20 @@ func (s *CompanyService) DeleteCompany(companyID, userID primitive.ObjectID) err
 	}
 
 	// Delete related data in cascade
-	// Note: Categories and Recurring use string companyID
-	companyIDStr := companyID.Hex()
-
-	// Delete transactions (uses ObjectID)
+	// Delete transactions
 	err = s.repo.DeleteRelatedTransactions(ctx, companyID)
 	if err != nil {
 		return err
 	}
 
-	// Delete categories (uses string)
-	err = s.repo.DeleteRelatedCategories(ctx, companyIDStr)
+	// Delete categories
+	err = s.repo.DeleteRelatedCategories(ctx, companyID)
 	if err != nil {
 		return err
 	}
 
-	// Delete recurring transactions (uses string)
-	err = s.repo.DeleteRelatedRecurring(ctx, companyIDStr)
+	// Delete recurring transactions
+	err = s.repo.DeleteRelatedRecurring(ctx, companyID)
 	if err != nil {
 		return err
 	}
@@ -183,6 +192,12 @@ func (s *CompanyService) ValidateCompanyOwnership(companyID, userID primitive.Ob
 
 	company, err := s.repo.ValidateOwnership(ctx, companyID, userID)
 	if err != nil {
+		if err == repositories.ErrNotFound {
+			return nil, ErrCompanyNotFound
+		}
+		if err == repositories.ErrUnauthorized {
+			return nil, ErrUnauthorized
+		}
 		return nil, err
 	}
 	if company == nil {

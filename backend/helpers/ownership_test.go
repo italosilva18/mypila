@@ -20,10 +20,22 @@ func setupTestDB(t *testing.T) func() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Connect to test database
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	// Try Docker port first (27018) with auth, then local (27017) without auth
+	mongoURI := "mongodb://admin:admin123@localhost:27018"
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		t.Skipf("Skipping test: MongoDB not available - %v", err)
+		// Try local MongoDB without auth
+		mongoURI = "mongodb://localhost:27017"
+		client, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+		if err != nil {
+			t.Skipf("Skipping test: MongoDB not available - %v", err)
+			return nil
+		}
+	}
+
+	// Ping to verify connection
+	if err := client.Ping(ctx, nil); err != nil {
+		t.Skipf("Skipping test: MongoDB not responding - %v", err)
 		return nil
 	}
 

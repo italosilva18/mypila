@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Save } from 'lucide-react';
 import { Company } from '../types';
 import { useFormValidation } from '../hooks/useFormValidation';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { validateRequired, validateMaxLength, combineValidations } from '../utils/validation';
 import { ErrorMessage } from './ErrorMessage';
 
@@ -16,6 +17,14 @@ export const CompanyModal: React.FC<Props> = ({ isOpen, onClose, onSave, company
   const [name, setName] = useState('');
   const { validateFields, getError, hasError, hasErrors, clearAllErrors } = useFormValidation();
 
+  // Handle Escape key to close modal
+  const handleClose = useCallback(() => {
+    clearAllErrors();
+    onClose();
+  }, [clearAllErrors, onClose]);
+
+  useEscapeKey(handleClose, isOpen);
+
   useEffect(() => {
     if (company) {
       setName(company.name);
@@ -25,18 +34,16 @@ export const CompanyModal: React.FC<Props> = ({ isOpen, onClose, onSave, company
     clearAllErrors();
   }, [company, isOpen, clearAllErrors]);
 
-  if (!isOpen) return null;
-
-  const validateForm = (): boolean => {
+  const validateForm = useCallback((): boolean => {
     return validateFields({
       name: () => combineValidations(
         validateRequired(name, 'Nome'),
         validateMaxLength(name, 100, 'Nome')
       )
     });
-  };
+  }, [validateFields, name]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -45,18 +52,20 @@ export const CompanyModal: React.FC<Props> = ({ isOpen, onClose, onSave, company
 
     onSave(name.trim());
     onClose();
-  };
+  }, [validateForm, name, onSave, onClose]);
 
-  const handleClose = () => {
-    clearAllErrors();
-    onClose();
-  };
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-stone-900/50 backdrop-blur-sm">
-      <div className="bg-white border-0 md:border border-stone-200 rounded-none md:rounded-2xl w-full h-full md:h-auto md:max-w-md shadow-2xl transform transition-all overflow-y-auto">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="company-modal-title"
+        className="bg-white border-0 md:border border-stone-200 rounded-none md:rounded-2xl w-full h-full md:h-auto md:max-w-md shadow-2xl transform transition-all overflow-y-auto"
+      >
         <div className="flex justify-between items-center p-4 md:p-6 border-b border-stone-200 bg-stone-50 sticky top-0 z-10">
-          <h3 className="text-lg md:text-xl font-bold text-stone-900">
+          <h3 id="company-modal-title" className="text-lg md:text-xl font-bold text-stone-900">
             {company ? 'Editar Ambiente' : 'Novo Ambiente'}
           </h3>
           <button onClick={handleClose} className="text-stone-400 active:text-stone-700 md:hover:text-stone-700 transition-colors p-2 -mr-2 rounded-lg active:bg-stone-100">

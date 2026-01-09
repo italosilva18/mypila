@@ -23,6 +23,13 @@ func getCompanyService() *services.CompanyService {
 	return companyService
 }
 
+// ResetCompanyService resets the singleton for testing purposes
+// This allows tests to reinitialize the service with a fresh repository
+func ResetCompanyService() {
+	companyServiceOnce = sync.Once{}
+	companyService = nil
+}
+
 // GetCompanies returns all companies owned by the authenticated user
 func GetCompanies(c *fiber.Ctx) error {
 	// Get authenticated user ID

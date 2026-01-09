@@ -85,7 +85,7 @@ export const useFormValidation = () => {
    * Checks if a specific field has error
    */
   const hasError = useCallback((fieldName: string): boolean => {
-    return errors[fieldName] && !errors[fieldName].isValid;
+    return errors[fieldName] ? !errors[fieldName].isValid : false;
   }, [errors]);
 
   return {

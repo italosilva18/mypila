@@ -9,6 +9,7 @@ export const DateSelector: React.FC = () => {
         <div className="flex items-center bg-stone-50 border border-stone-200 rounded-lg md:rounded-xl p-0.5 md:p-1">
             <button
                 onClick={prevMonth}
+                aria-label="Mês anterior"
                 className="p-1 md:p-2 text-stone-500 hover:text-stone-800 active:bg-stone-100 hover:bg-stone-100 rounded-md md:rounded-lg transition-colors"
             >
                 <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
@@ -22,6 +23,7 @@ export const DateSelector: React.FC = () => {
 
             <button
                 onClick={nextMonth}
+                aria-label="Próximo mês"
                 className="p-1 md:p-2 text-stone-500 hover:text-stone-800 active:bg-stone-100 hover:bg-stone-100 rounded-md md:rounded-lg transition-colors"
             >
                 <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />

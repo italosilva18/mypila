@@ -88,6 +88,7 @@ func CreateCategory(c *fiber.Ctx) error {
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 50),
 		helpers.ValidateHexColor(req.Color),
+		helpers.ValidateCategoryType(string(req.Type)),
 		helpers.ValidateNoScriptTags(req.Name, "name"),
 		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),
@@ -102,19 +103,20 @@ func CreateCategory(c *fiber.Ctx) error {
 
 	collection := database.GetCollection(categoryCollection)
 
+	// Default to EXPENSE if not provided
+	categoryType := req.Type
+	if categoryType == "" {
+		categoryType = models.Expense
+	}
+
 	category := models.Category{
 		ID:        primitive.NewObjectID(),
 		CompanyID: companyObjID,
 		Name:      req.Name,
-		Type:      req.Type,
+		Type:      categoryType,
 		Color:     req.Color,
 		Budget:    req.Budget,
 		CreatedAt: time.Now(),
-	}
-
-	// Default to EXPENSE if not provided
-	if category.Type == "" {
-		category.Type = models.Expense
 	}
 
 	_, err = collection.InsertOne(ctx, category)
@@ -151,6 +153,7 @@ func UpdateCategory(c *fiber.Ctx) error {
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 50),
 		helpers.ValidateHexColor(req.Color),
+		helpers.ValidateCategoryType(string(req.Type)),
 		helpers.ValidateNoScriptTags(req.Name, "name"),
 		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),

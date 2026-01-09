@@ -3,15 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { QuoteComparison as QuoteComparisonType, Quote } from '../types';
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Loader2, BarChart3 } from 'lucide-react';
-
-const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
-const formatPercent = (value: number) => {
-    const sign = value > 0 ? '+' : '';
-    return `${sign}${value.toFixed(1)}%`;
-};
+import { formatCurrency } from '../utils/currency';
+import { formatPercent } from '../utils/date';
 
 export const QuoteComparisonPage: React.FC = () => {
     const { companyId, quoteId } = useParams<{ companyId: string; quoteId: string }>();
