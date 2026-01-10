@@ -71,7 +71,7 @@ export const Reports: React.FC = () => {
             report += `*${category}* (${formatCurrency(categoryTotal)})\n`;
             items.forEach(t => {
                 const statusIcon = t.status === Status.PAID ? '✓' : '○';
-                report += `  ${statusIcon} ${t.description || 'Sem descricao'} - ${formatCurrency(t.amount)}\n`;
+                report += `  ${statusIcon} ${t.description || 'Sem descricao'} - ${formatCurrency(t.amount)} (${t.month}/${t.year})\n`;
             });
             report += `\n`;
         });
