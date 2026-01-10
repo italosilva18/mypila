@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Loader2, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles, Mail, Lock, User } from 'lucide-react';
 import { useFormValidation } from '../hooks/useFormValidation';
 import { validateRequired, validateMinLength, validateMaxLength, combineValidations } from '../utils/validation';
 import { ErrorMessage } from '../components/ErrorMessage';
@@ -48,93 +48,108 @@ export const Register: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-paper relative overflow-hidden">
-            {/* Background Effects - Vintage style */}
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-                <div className="absolute top-[10%] -left-[10%] w-[60%] h-[60%] rounded-full bg-stone-300/30 blur-[120px]" />
-                <div className="absolute bottom-[10%] -right-[10%] w-[60%] h-[60%] rounded-full bg-stone-400/20 blur-[120px]" />
-            </div>
+        <div className="min-h-screen flex items-center justify-center bg-background py-8 px-4">
+            <div className="w-full max-w-md">
+                {/* Logo */}
+                <div className="text-center mb-8">
+                    <div className="inline-flex p-4 bg-gradient-primary rounded-2xl shadow-card mb-4">
+                        <Sparkles className="w-8 h-8 text-white" />
+                    </div>
+                    <h1 className="text-3xl font-bold text-foreground">
+                        MyPila<span className="text-primary-500">Pro</span>
+                    </h1>
+                </div>
 
-            <div className="w-full max-w-md px-4 md:p-8 z-10">
-                <div className="bg-white/80 backdrop-blur-xl border border-stone-200 rounded-2xl md:rounded-3xl shadow-card p-6 md:p-8 transform transition-all hover:shadow-lg">
-                    <div className="text-center mb-6 md:mb-8">
-                        <h2 className="text-2xl md:text-3xl font-bold text-stone-900 mb-1 md:mb-2 tracking-tight">Criar Conta</h2>
-                        <p className="text-stone-500 text-sm md:text-base">Comece a controlar suas finanças hoje</p>
+                {/* Register Card */}
+                <div className="card p-8 animate-fadeIn">
+                    <div className="text-center mb-8">
+                        <h2 className="text-2xl font-bold text-foreground mb-2">Criar Conta</h2>
+                        <p className="text-muted">Comece a controlar suas financas hoje</p>
                     </div>
 
                     {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl mb-4 md:mb-6 text-xs md:text-sm flex items-center gap-2">
-                            <span>!</span> {error}
+                        <div className="bg-destructive-light border border-destructive/30 text-destructive px-4 py-3 rounded-xl mb-6 text-sm flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-destructive/20 flex items-center justify-center text-xs">!</span>
+                            {error}
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5">
+                    <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <label className="block text-xs md:text-sm font-medium text-stone-700 mb-1.5 md:mb-2 ml-1">Nome Completo</label>
-                            <input
-                                type="text"
-                                className={`w-full px-3 md:px-4 py-3 rounded-lg md:rounded-xl bg-stone-50 border text-sm md:text-base text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
-                                    hasError('name')
-                                        ? 'border-red-500 focus:ring-red-400'
-                                        : 'border-stone-200 focus:ring-stone-400'
-                                }`}
-                                placeholder="Seu nome"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                            />
+                            <label className="block text-sm font-medium text-foreground mb-2 ml-1">Nome Completo</label>
+                            <div className="relative">
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+                                <input
+                                    type="text"
+                                    className={`input pl-12 ${hasError('name') ? 'input-error' : ''}`}
+                                    placeholder="Seu nome"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                />
+                            </div>
                             <ErrorMessage error={getError('name')} />
                         </div>
 
                         <div>
-                            <label className="block text-xs md:text-sm font-medium text-stone-700 mb-1.5 md:mb-2 ml-1">Email</label>
-                            <input
-                                type="email"
-                                className={`w-full px-3 md:px-4 py-3 rounded-lg md:rounded-xl bg-stone-50 border text-sm md:text-base text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
-                                    hasError('email')
-                                        ? 'border-red-500 focus:ring-red-400'
-                                        : 'border-stone-200 focus:ring-stone-400'
-                                }`}
-                                placeholder="seu@email.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
+                            <label className="block text-sm font-medium text-foreground mb-2 ml-1">Email</label>
+                            <div className="relative">
+                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+                                <input
+                                    type="email"
+                                    className={`input pl-12 ${hasError('email') ? 'input-error' : ''}`}
+                                    placeholder="seu@email.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
+                            </div>
                             <ErrorMessage error={getError('email')} />
                         </div>
 
                         <div>
-                            <label className="block text-xs md:text-sm font-medium text-stone-700 mb-1.5 md:mb-2 ml-1">Senha</label>
-                            <input
-                                type="password"
-                                className={`w-full px-3 md:px-4 py-3 rounded-lg md:rounded-xl bg-stone-50 border text-sm md:text-base text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all ${
-                                    hasError('password')
-                                        ? 'border-red-500 focus:ring-red-400'
-                                        : 'border-stone-200 focus:ring-stone-400'
-                                }`}
-                                placeholder="********"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
+                            <label className="block text-sm font-medium text-foreground mb-2 ml-1">Senha</label>
+                            <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+                                <input
+                                    type="password"
+                                    className={`input pl-12 ${hasError('password') ? 'input-error' : ''}`}
+                                    placeholder="Minimo 6 caracteres"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                            </div>
                             <ErrorMessage error={getError('password')} />
                         </div>
 
                         <button
                             type="submit"
                             disabled={isSubmitting}
-                            className="w-full bg-gradient-to-r from-stone-800 to-stone-900 active:from-stone-700 active:to-stone-800 text-white font-semibold py-3 md:py-3.5 rounded-lg md:rounded-xl text-sm md:text-base transition-all transform active:scale-[0.98] shadow-lg shadow-stone-900/25 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                            className="w-full btn-primary flex items-center justify-center gap-2"
                         >
-                            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Criar Conta <ArrowRight className="w-4 h-4 md:w-5 md:h-5" /></>}
+                            {isSubmitting ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <>
+                                    Criar Conta
+                                    <ArrowRight className="w-5 h-5" />
+                                </>
+                            )}
                         </button>
                     </form>
 
-                    <div className="mt-6 md:mt-8 text-center">
-                        <p className="text-stone-500 text-xs md:text-sm">
-                            Já tem uma conta?{' '}
-                            <Link to="/login" className="text-stone-800 active:text-stone-600 font-medium transition-colors hover:underline">
-                                Faça login
+                    <div className="mt-8 text-center">
+                        <p className="text-muted text-sm">
+                            Ja tem uma conta?{' '}
+                            <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium transition-colors">
+                                Faca login
                             </Link>
                         </p>
                     </div>
                 </div>
+
+                {/* Footer */}
+                <p className="text-center text-muted text-xs mt-8">
+                    Gestao financeira inteligente
+                </p>
             </div>
         </div>
     );

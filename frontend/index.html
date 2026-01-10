@@ -4,38 +4,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>M2M Gestão de Salários</title>
+    <title>MyPilaPro - Gestao Financeira</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {
-        /* Paleta Vintage Moderna - Estilo Datilografia */
-        --color-paper: #faf8f5;
-        --color-paper-dark: #f5f3f0;
-        --color-ink: #1c1917;
-        --color-ink-light: #292524;
-        --color-ink-muted: #78716c;
-        --color-ink-faded: #a8a29e;
-        --color-border: #e7e5e4;
-        --color-border-dark: #d6d3d1;
+        /* Paleta Teal/Mint - Moderna e Elegante */
+        --color-primary: hsl(168 65% 55%);
+        --color-primary-dark: hsl(168 65% 45%);
+        --color-primary-light: hsl(168 50% 65%);
+
+        --color-background: hsl(0 0% 98%);
+        --color-foreground: hsl(220 20% 20%);
+        --color-muted: hsl(220 10% 50%);
+        --color-muted-light: hsl(220 10% 70%);
+
+        --color-card: hsl(0 0% 100%);
+        --color-border: hsl(220 10% 90%);
+        --color-border-dark: hsl(220 10% 85%);
 
         /* Cores de estado */
-        --color-success: #16a34a;
-        --color-warning: #d97706;
-        --color-danger: #dc2626;
+        --color-success: hsl(145 60% 50%);
+        --color-warning: hsl(0 55% 70%);
+        --color-danger: hsl(0 70% 55%);
 
         /* Gradientes */
-        --gradient-primary: linear-gradient(135deg, #292524 0%, #1c1917 100%);
-        --gradient-header: linear-gradient(180deg, #1c1917 0%, #292524 100%);
+        --gradient-primary: linear-gradient(135deg, hsl(168 65% 55%) 0%, hsl(168 50% 65%) 100%);
+        --gradient-header: linear-gradient(180deg, hsl(168 65% 50%) 0%, hsl(168 65% 55%) 100%);
 
         /* Sombras */
         --shadow-soft: 0 2px 15px -3px rgba(0,0,0,0.07);
         --shadow-card: 0 4px 20px -2px rgba(0,0,0,0.1);
+
+        /* Border Radius */
+        --radius: 0.75rem;
       }
 
       body {
         font-family: 'Nunito', sans-serif;
-        background-color: var(--color-paper);
+        background-color: var(--color-background);
+        color: var(--color-foreground);
       }
     </style>
   <script type="importmap">

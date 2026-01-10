@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw, ClipboardList } from 'lucide-react';
+import { Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw, ClipboardList, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export const Sidebar: React.FC = () => {
@@ -13,13 +13,15 @@ export const Sidebar: React.FC = () => {
     };
 
     return (
-        <aside className="hidden md:flex flex-col w-64 bg-stone-900 border-r border-stone-800 h-screen fixed left-0 top-0 z-50">
+        <aside className="hidden md:flex flex-col w-64 bg-card border-r border-border h-screen fixed left-0 top-0 z-50 shadow-soft">
             <div className="p-6">
-                <div className="flex items-center gap-2 mb-8">
-                    <div className="p-2 bg-gradient-to-tr from-stone-700 to-stone-800 rounded-lg">
-                        <LayoutDashboard className="w-5 h-5 text-stone-100" />
+                <div className="flex items-center gap-3 mb-8">
+                    <div className="p-2.5 bg-gradient-primary rounded-xl shadow-soft">
+                        <Sparkles className="w-5 h-5 text-white" />
                     </div>
-                    <span className="text-xl font-bold text-white tracking-tight">Financeiro<span className="text-stone-400">Pro</span></span>
+                    <span className="text-xl font-bold text-foreground tracking-tight">
+                        MyPila<span className="text-primary-500">Pro</span>
+                    </span>
                 </div>
 
                 <nav className="flex-1 space-y-2">
@@ -27,7 +29,7 @@ export const Sidebar: React.FC = () => {
                         to="/"
                         end
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <ArrowLeft className="w-5 h-5" />
@@ -35,13 +37,13 @@ export const Sidebar: React.FC = () => {
                     </NavLink>
 
                     <div className="pt-4 pb-2">
-                        <p className="px-4 text-xs font-semibold text-stone-500 uppercase tracking-wider">Menu Principal</p>
+                        <p className="px-4 text-xs font-semibold text-muted uppercase tracking-wider">Menu Principal</p>
                     </div>
 
                     <NavLink
                         to="dashboard"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <Wallet className="w-5 h-5" />
@@ -51,7 +53,7 @@ export const Sidebar: React.FC = () => {
                     <NavLink
                         to="categories"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <Tags className="w-5 h-5" />
@@ -61,47 +63,47 @@ export const Sidebar: React.FC = () => {
                     <NavLink
                         to="reports"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <FileText className="w-5 h-5" />
-                        <span>Relatórios</span>
+                        <span>Relatorios</span>
                     </NavLink>
 
                     <NavLink
                         to="recurring"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <RefreshCw className="w-5 h-5" />
-                        <span>Recorrências</span>
+                        <span>Recorrencias</span>
                     </NavLink>
 
                     <NavLink
                         to="quotes"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-stone-800 text-white shadow-lg shadow-stone-900/20' : 'text-stone-400 hover:bg-stone-800/50 hover:text-white'}`
+                            `nav-item ${isActive ? 'nav-item-active' : ''}`
                         }
                     >
                         <ClipboardList className="w-5 h-5" />
-                        <span>Orçamentos</span>
+                        <span>Orcamentos</span>
                     </NavLink>
                 </nav>
             </div>
 
-            <div className="p-4 border-t border-stone-800 mt-auto">
+            <div className="p-4 border-t border-border mt-auto">
                 <div className="flex items-center gap-3 px-4 py-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-stone-600 to-stone-700 flex items-center justify-center text-white font-bold text-sm">
+                    <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center text-white font-bold text-sm shadow-soft">
                         {user?.name?.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-                        <p className="text-xs text-stone-500 truncate">{user?.email}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
+                        <p className="text-xs text-muted truncate">{user?.email}</p>
                     </div>
                     <button
                         onClick={handleLogout}
-                        className="text-stone-400 hover:text-white transition-colors"
+                        className="text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-primary-50"
                         title="Sair"
                         aria-label="Sair da conta"
                     >
