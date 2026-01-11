@@ -50,3 +50,4 @@ backend/main
 
 # MongoDB data (if running locally)
 mongodb_data/
+.claude/
