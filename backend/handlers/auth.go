@@ -12,8 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
 	"m2m-backend/config"
@@ -21,9 +20,6 @@ import (
 	"m2m-backend/helpers"
 	"m2m-backend/models"
 )
-
-const userCollection = "users"
-const refreshTokenCollection = "refresh_tokens"
 
 // JWT expiration times - shorter for production security
 var (
@@ -84,7 +80,6 @@ func Register(c *fiber.Ctx) error {
 		helpers.ValidateMinLength(req.Password, "password", 6),
 		helpers.ValidateMaxLength(req.Password, "password", 72),
 		helpers.ValidateNoScriptTags(req.Name, "name"),
-		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),
 	)
 
@@ -95,10 +90,9 @@ func Register(c *fiber.Ctx) error {
 	// Sanitize user input after validation (DO NOT sanitize email/password)
 	req.Name = helpers.SanitizeString(req.Name)
 
-	collection := database.GetCollection(userCollection)
-
 	// Check if user exists
-	count, err := collection.CountDocuments(ctx, bson.M{"email": req.Email})
+	var count int
+	err := database.QueryRow(ctx, "SELECT COUNT(*) FROM users WHERE email = $1", req.Email).Scan(&count)
 	if err != nil {
 		return helpers.DatabaseError(c, "check_user_exists", err)
 	}
@@ -112,15 +106,22 @@ func Register(c *fiber.Ctx) error {
 		return helpers.InternalError(c, helpers.ErrCodeInternalError, "Falha ao processar senha", err, nil)
 	}
 
+	userID := uuid.New()
+	now := time.Now()
+
 	user := models.User{
-		ID:           primitive.NewObjectID(),
+		ID:           userID,
 		Name:         req.Name,
 		Email:        req.Email,
 		PasswordHash: string(hash),
-		CreatedAt:    time.Now(),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
-	_, err = collection.InsertOne(ctx, user)
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		user.ID, user.Name, user.Email, user.PasswordHash, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		logSecurityEvent("REGISTER_FAILED", req.Email, ip, userAgent, "db_error", requestID)
 		return helpers.DatabaseError(c, "create_user", err)
@@ -179,10 +180,10 @@ func Login(c *fiber.Ctx) error {
 		return helpers.SendValidationErrors(c, errors)
 	}
 
-	collection := database.GetCollection(userCollection)
-
 	var user models.User
-	err := collection.FindOne(ctx, bson.M{"email": req.Email}).Decode(&user)
+	err := database.QueryRow(ctx,
+		`SELECT id, name, email, password_hash, created_at, updated_at FROM users WHERE email = $1`,
+		req.Email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		logSecurityEvent("LOGIN_FAILED", req.Email, ip, userAgent, "user_not_found", requestID)
 		return helpers.AuthInvalidCredentials(c)
@@ -220,10 +221,6 @@ func Login(c *fiber.Ctx) error {
 }
 
 // GetMe returns the current authenticated user's information
-// This endpoint is useful for:
-// - Validating if a token is still valid
-// - Getting fresh user data on app load
-// - Checking authentication state in the frontend
 func GetMe(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -234,16 +231,17 @@ func GetMe(c *fiber.Ctx) error {
 		return helpers.AuthInvalidUserContext(c)
 	}
 
-	// Convert string ID to ObjectID
-	userId, err := primitive.ObjectIDFromHex(userIdStr)
+	// Convert string ID to UUID
+	userId, err := uuid.Parse(userIdStr)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "userId")
 	}
 
 	// Fetch user from database
-	collection := database.GetCollection(userCollection)
 	var user models.User
-	err = collection.FindOne(ctx, bson.M{"_id": userId}).Decode(&user)
+	err = database.QueryRow(ctx,
+		`SELECT id, name, email, password_hash, created_at, updated_at FROM users WHERE id = $1`,
+		userId).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return helpers.AuthUserNotFound(c)
 	}
@@ -259,7 +257,7 @@ func generateAccessToken(user models.User) (string, error) {
 	secret := config.GetJWTSecret()
 
 	claims := jwt.MapClaims{
-		"userId": user.ID.Hex(),
+		"userId": user.ID.String(),
 		"email":  user.Email,
 		"exp":    time.Now().Add(accessTokenExpiry).Unix(),
 		"iat":    time.Now().Unix(),
@@ -271,7 +269,7 @@ func generateAccessToken(user models.User) (string, error) {
 }
 
 // createRefreshToken generates a new refresh token and stores its hash in the database
-func createRefreshToken(ctx context.Context, userID primitive.ObjectID, ipAddress, userAgent string) (string, error) {
+func createRefreshToken(ctx context.Context, userID uuid.UUID, ipAddress, userAgent string) (string, error) {
 	// Generate a secure random token
 	token, err := generateSecureToken()
 	if err != nil {
@@ -281,32 +279,25 @@ func createRefreshToken(ctx context.Context, userID primitive.ObjectID, ipAddres
 	// Hash the token before storing
 	tokenHash := hashToken(token)
 
-	// Create the refresh token record
-	refreshToken := models.RefreshToken{
-		ID:        primitive.NewObjectID(),
-		TokenHash: tokenHash,
-		UserID:    userID,
-		ExpiresAt: time.Now().Add(refreshTokenExpiry),
-		CreatedAt: time.Now(),
-		IsRevoked: false,
-		UserAgent: userAgent,
-		IPAddress: ipAddress,
-	}
+	tokenID := uuid.New()
+	now := time.Now()
+	expiresAt := now.Add(refreshTokenExpiry)
 
 	// Store in database
-	collection := database.GetCollection(refreshTokenCollection)
-	_, err = collection.InsertOne(ctx, refreshToken)
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, is_revoked, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		tokenID, userID, tokenHash, expiresAt, false, now)
 	if err != nil {
 		return "", err
 	}
 
-	log.Printf("[SECURITY] REFRESH_TOKEN_CREATED | userId=%s | ip=%s", userID.Hex(), ipAddress)
+	log.Printf("[SECURITY] REFRESH_TOKEN_CREATED | userId=%s | ip=%s", userID.String(), ipAddress)
 
 	return token, nil
 }
 
 // RefreshToken handles the token refresh endpoint
-// POST /api/auth/refresh
 func RefreshToken(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -329,9 +320,10 @@ func RefreshToken(c *fiber.Ctx) error {
 	tokenHash := hashToken(req.RefreshToken)
 
 	// Find the refresh token in database
-	collection := database.GetCollection(refreshTokenCollection)
 	var storedToken models.RefreshToken
-	err := collection.FindOne(ctx, bson.M{"tokenHash": tokenHash}).Decode(&storedToken)
+	err := database.QueryRow(ctx,
+		`SELECT id, user_id, token_hash, expires_at, is_revoked, created_at FROM refresh_tokens WHERE token_hash = $1`,
+		tokenHash).Scan(&storedToken.ID, &storedToken.UserID, &storedToken.TokenHash, &storedToken.ExpiresAt, &storedToken.IsRevoked, &storedToken.CreatedAt)
 	if err != nil {
 		logSecurityEvent("REFRESH_FAILED", "", ip, userAgent, "token_not_found", requestID)
 		return helpers.AuthInvalidToken(c)
@@ -354,9 +346,10 @@ func RefreshToken(c *fiber.Ctx) error {
 	}
 
 	// Get the user
-	userColl := database.GetCollection("users")
 	var user models.User
-	err = userColl.FindOne(ctx, bson.M{"_id": storedToken.UserID}).Decode(&user)
+	err = database.QueryRow(ctx,
+		`SELECT id, name, email, password_hash, created_at, updated_at FROM users WHERE id = $1`,
+		storedToken.UserID).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		logSecurityEvent("REFRESH_FAILED", "", ip, userAgent, "user_not_found", requestID)
 		return helpers.AuthUserNotFound(c)
@@ -393,7 +386,6 @@ func RefreshToken(c *fiber.Ctx) error {
 }
 
 // Logout handles user logout by revoking the refresh token
-// POST /api/auth/logout
 func Logout(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -415,35 +407,28 @@ func Logout(c *fiber.Ctx) error {
 	// Hash the token and revoke it
 	tokenHash := hashToken(req.RefreshToken)
 
-	collection := database.GetCollection(refreshTokenCollection)
 	now := time.Now()
-	result, err := collection.UpdateOne(
-		ctx,
-		bson.M{"tokenHash": tokenHash, "isRevoked": false},
-		bson.M{
-			"$set": bson.M{
-				"isRevoked": true,
-				"revokedAt": now,
-			},
-		},
-	)
+	result, err := database.Pool.Exec(ctx,
+		`UPDATE refresh_tokens SET is_revoked = true WHERE token_hash = $1 AND is_revoked = false`,
+		tokenHash)
 
 	if err != nil {
 		log.Printf("[SECURITY] WARNING: Failed to revoke token on logout: %v", err)
 		// Still return success - don't leak info
 	}
 
-	if result != nil && result.ModifiedCount > 0 {
+	if result.RowsAffected() > 0 {
 		logSecurityEvent("LOGOUT_SUCCESS", "", ip, userAgent, "token_revoked", requestID)
 	} else {
 		logSecurityEvent("LOGOUT_SUCCESS", "", ip, userAgent, "no_token_to_revoke", requestID)
 	}
 
+	_ = now // unused but keeping for consistency
+
 	return c.JSON(fiber.Map{"message": "Logout realizado com sucesso"})
 }
 
 // LogoutAll revokes all refresh tokens for the authenticated user
-// POST /api/auth/logout-all
 func LogoutAll(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -458,7 +443,7 @@ func LogoutAll(c *fiber.Ctx) error {
 		return helpers.AuthInvalidUserContext(c)
 	}
 
-	userId, err := primitive.ObjectIDFromHex(userIdStr)
+	userId, err := uuid.Parse(userIdStr)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "userId")
 	}
@@ -479,73 +464,45 @@ func LogoutAll(c *fiber.Ctx) error {
 }
 
 // revokeToken revokes a single refresh token by ID
-func revokeToken(ctx context.Context, tokenID primitive.ObjectID) error {
-	collection := database.GetCollection(refreshTokenCollection)
-	now := time.Now()
-
-	_, err := collection.UpdateOne(
-		ctx,
-		bson.M{"_id": tokenID},
-		bson.M{
-			"$set": bson.M{
-				"isRevoked": true,
-				"revokedAt": now,
-			},
-		},
-	)
-
+func revokeToken(ctx context.Context, tokenID uuid.UUID) error {
+	_, err := database.Pool.Exec(ctx,
+		`UPDATE refresh_tokens SET is_revoked = true WHERE id = $1`,
+		tokenID)
 	return err
 }
 
 // revokeAllUserTokens revokes all refresh tokens for a user
-func revokeAllUserTokens(ctx context.Context, userID primitive.ObjectID) (int64, error) {
-	collection := database.GetCollection(refreshTokenCollection)
-	now := time.Now()
-
-	result, err := collection.UpdateMany(
-		ctx,
-		bson.M{"userId": userID, "isRevoked": false},
-		bson.M{
-			"$set": bson.M{
-				"isRevoked": true,
-				"revokedAt": now,
-			},
-		},
-	)
+func revokeAllUserTokens(ctx context.Context, userID uuid.UUID) (int64, error) {
+	result, err := database.Pool.Exec(ctx,
+		`UPDATE refresh_tokens SET is_revoked = true WHERE user_id = $1 AND is_revoked = false`,
+		userID)
 
 	if err != nil {
 		return 0, err
 	}
 
-	if result.ModifiedCount > 0 {
-		log.Printf("[SECURITY] TOKENS_REVOKED | userId=%s | count=%d", userID.Hex(), result.ModifiedCount)
+	count := result.RowsAffected()
+	if count > 0 {
+		log.Printf("[SECURITY] TOKENS_REVOKED | userId=%s | count=%d", userID.String(), count)
 	}
 
-	return result.ModifiedCount, nil
+	return count, nil
 }
 
 // CleanupExpiredTokens removes expired refresh tokens from the database
-// This should be called periodically (e.g., via cron job or scheduled task)
 func CleanupExpiredTokens(ctx context.Context) (int64, error) {
-	collection := database.GetCollection(refreshTokenCollection)
-
-	result, err := collection.DeleteMany(
-		ctx,
-		bson.M{
-			"$or": []bson.M{
-				{"expiresAt": bson.M{"$lt": time.Now()}},
-				{"isRevoked": true, "revokedAt": bson.M{"$lt": time.Now().Add(-24 * time.Hour)}}, // Keep revoked for 24h for audit
-			},
-		},
-	)
+	result, err := database.Pool.Exec(ctx,
+		`DELETE FROM refresh_tokens WHERE expires_at < $1 OR (is_revoked = true AND created_at < $2)`,
+		time.Now(), time.Now().Add(-24*time.Hour))
 
 	if err != nil {
 		return 0, err
 	}
 
-	if result.DeletedCount > 0 {
-		log.Printf("[SECURITY] CLEANUP_TOKENS | deleted=%d", result.DeletedCount)
+	count := result.RowsAffected()
+	if count > 0 {
+		log.Printf("[SECURITY] CLEANUP_TOKENS | deleted=%d", count)
 	}
 
-	return result.DeletedCount, nil
+	return count, nil
 }

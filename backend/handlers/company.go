@@ -1,47 +1,47 @@
 package handlers
 
 import (
-	"sync"
+	"context"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 
+	"m2m-backend/database"
 	"m2m-backend/helpers"
 	"m2m-backend/models"
-	"m2m-backend/services"
 )
-
-var (
-	companyService     *services.CompanyService
-	companyServiceOnce sync.Once
-)
-
-func getCompanyService() *services.CompanyService {
-	companyServiceOnce.Do(func() {
-		companyService = services.NewCompanyService()
-	})
-	return companyService
-}
-
-// ResetCompanyService resets the singleton for testing purposes
-// This allows tests to reinitialize the service with a fresh repository
-func ResetCompanyService() {
-	companyServiceOnce = sync.Once{}
-	companyService = nil
-}
 
 // GetCompanies returns all companies owned by the authenticated user
 func GetCompanies(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Get authenticated user ID
 	userID, err := helpers.GetUserIDFromContext(c)
 	if err != nil {
 		return err
 	}
 
-	// Call service layer
-	companies, err := getCompanyService().GetCompaniesByUserID(userID)
+	rows, err := database.Query(ctx,
+		`SELECT id, user_id, name, created_at, updated_at FROM companies WHERE user_id = $1 ORDER BY name`,
+		userID)
 	if err != nil {
 		return helpers.CompanyFetchFailed(c, err)
+	}
+	defer rows.Close()
+
+	var companies []models.Company
+	for rows.Next() {
+		var company models.Company
+		if err := rows.Scan(&company.ID, &company.UserID, &company.Name, &company.CreatedAt, &company.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "scan_company", err)
+		}
+		companies = append(companies, company)
+	}
+
+	if companies == nil {
+		companies = []models.Company{}
 	}
 
 	return c.JSON(companies)
@@ -49,6 +49,9 @@ func GetCompanies(c *fiber.Ctx) error {
 
 // CreateCompany creates a new company for the authenticated user
 func CreateCompany(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Get authenticated user ID
 	userID, err := helpers.GetUserIDFromContext(c)
 	if err != nil {
@@ -61,12 +64,35 @@ func CreateCompany(c *fiber.Ctx) error {
 		return helpers.InvalidRequestBody(c)
 	}
 
-	// Call service layer
-	company, validationErrors, err := getCompanyService().CreateCompany(userID, req)
+	// Validations
+	errors := helpers.CollectErrors(
+		helpers.ValidateRequired(req.Name, "name"),
+		helpers.ValidateMaxLength(req.Name, "name", 100),
+		helpers.ValidateNoScriptTags(req.Name, "name"),
+		helpers.ValidateSQLInjection(req.Name, "name"),
+	)
+
+	if helpers.HasErrors(errors) {
+		return helpers.SendValidationErrors(c, errors)
+	}
+
+	// Sanitize
+	req.Name = helpers.SanitizeString(req.Name)
+
+	now := time.Now()
+	company := models.Company{
+		ID:        uuid.New(),
+		UserID:    userID,
+		Name:      req.Name,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO companies (id, user_id, name, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		company.ID, company.UserID, company.Name, company.CreatedAt, company.UpdatedAt)
 	if err != nil {
-		if err == services.ErrInvalidInput && validationErrors != nil {
-			return helpers.SendValidationErrors(c, validationErrors)
-		}
 		return helpers.CompanyCreateFailed(c, err)
 	}
 
@@ -75,6 +101,9 @@ func CreateCompany(c *fiber.Ctx) error {
 
 // UpdateCompany updates an existing company (ownership validated)
 func UpdateCompany(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Get authenticated user ID
 	userID, err := helpers.GetUserIDFromContext(c)
 	if err != nil {
@@ -83,7 +112,7 @@ func UpdateCompany(c *fiber.Ctx) error {
 
 	// Parse and validate company ID
 	id := c.Params("id")
-	companyID, err := primitive.ObjectIDFromHex(id)
+	companyID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
@@ -94,21 +123,48 @@ func UpdateCompany(c *fiber.Ctx) error {
 		return helpers.InvalidRequestBody(c)
 	}
 
-	// Call service layer
-	company, validationErrors, err := getCompanyService().UpdateCompany(companyID, userID, req)
+	// Validations
+	errors := helpers.CollectErrors(
+		helpers.ValidateRequired(req.Name, "name"),
+		helpers.ValidateMaxLength(req.Name, "name", 100),
+		helpers.ValidateNoScriptTags(req.Name, "name"),
+		helpers.ValidateSQLInjection(req.Name, "name"),
+	)
+
+	if helpers.HasErrors(errors) {
+		return helpers.SendValidationErrors(c, errors)
+	}
+
+	// Sanitize
+	req.Name = helpers.SanitizeString(req.Name)
+
+	// Check ownership and update
+	result, err := database.Pool.Exec(ctx,
+		`UPDATE companies SET name = $1, updated_at = $2 WHERE id = $3 AND user_id = $4`,
+		req.Name, time.Now(), companyID, userID)
 	if err != nil {
-		if err == services.ErrInvalidInput && validationErrors != nil {
-			return helpers.SendValidationErrors(c, validationErrors)
-		}
-		if err == services.ErrCompanyNotFound {
+		return helpers.CompanyUpdateFailed(c, err)
+	}
+
+	if result.RowsAffected() == 0 {
+		// Check if company exists
+		var exists bool
+		database.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM companies WHERE id = $1)", companyID).Scan(&exists)
+		if !exists {
 			return helpers.CompanyNotFound(c)
 		}
-		if err == services.ErrUnauthorized {
-			return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para acessar esta empresa", helpers.ErrorDetails{
-				"reason": "Esta empresa pertence a outro usuario",
-			})
-		}
-		return helpers.CompanyUpdateFailed(c, err)
+		return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para acessar esta empresa", helpers.ErrorDetails{
+			"reason": "Esta empresa pertence a outro usuario",
+		})
+	}
+
+	// Fetch updated company
+	var company models.Company
+	err = database.QueryRow(ctx,
+		`SELECT id, user_id, name, created_at, updated_at FROM companies WHERE id = $1`,
+		companyID).Scan(&company.ID, &company.UserID, &company.Name, &company.CreatedAt, &company.UpdatedAt)
+	if err != nil {
+		return helpers.DatabaseError(c, "fetch_company", err)
 	}
 
 	return c.JSON(company)
@@ -116,6 +172,9 @@ func UpdateCompany(c *fiber.Ctx) error {
 
 // DeleteCompany deletes a company and all related data in cascade (ownership validated)
 func DeleteCompany(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Get authenticated user ID
 	userID, err := helpers.GetUserIDFromContext(c)
 	if err != nil {
@@ -124,23 +183,29 @@ func DeleteCompany(c *fiber.Ctx) error {
 
 	// Parse and validate company ID
 	id := c.Params("id")
-	companyID, err := primitive.ObjectIDFromHex(id)
+	companyID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
-	// Call service layer
-	err = getCompanyService().DeleteCompany(companyID, userID)
+	// Delete with ownership check (CASCADE will handle related records)
+	result, err := database.Pool.Exec(ctx,
+		`DELETE FROM companies WHERE id = $1 AND user_id = $2`,
+		companyID, userID)
 	if err != nil {
-		if err == services.ErrCompanyNotFound {
+		return helpers.CompanyDeleteFailed(c, err)
+	}
+
+	if result.RowsAffected() == 0 {
+		// Check if company exists
+		var exists bool
+		database.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM companies WHERE id = $1)", companyID).Scan(&exists)
+		if !exists {
 			return helpers.CompanyNotFound(c)
 		}
-		if err == services.ErrUnauthorized {
-			return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para excluir esta empresa", helpers.ErrorDetails{
-				"reason": "Esta empresa pertence a outro usuario",
-			})
-		}
-		return helpers.CompanyDeleteFailed(c, err)
+		return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para excluir esta empresa", helpers.ErrorDetails{
+			"reason": "Esta empresa pertence a outro usuario",
+		})
 	}
 
 	return c.JSON(fiber.Map{"message": "Empresa excluida com sucesso"})

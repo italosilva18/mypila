@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 type CategoryType string
@@ -14,13 +14,14 @@ const (
 )
 
 type Category struct {
-	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	CompanyID primitive.ObjectID `json:"companyId" bson:"companyId"`
-	Name      string             `json:"name" bson:"name"`
-	Type      CategoryType       `json:"type" bson:"type"`
-	Color     string             `json:"color" bson:"color"`
-	Budget    float64            `json:"budget" bson:"budget"`
-	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`
+	ID        uuid.UUID    `json:"id"`
+	CompanyID uuid.UUID    `json:"companyId"`
+	Name      string       `json:"name"`
+	Type      CategoryType `json:"type"`
+	Color     string       `json:"color"`
+	Budget    float64      `json:"budget"`
+	CreatedAt time.Time    `json:"createdAt"`
+	UpdatedAt time.Time    `json:"updatedAt"`
 }
 
 type CreateCategoryRequest struct {

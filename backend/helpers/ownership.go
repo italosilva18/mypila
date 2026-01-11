@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 
 	"m2m-backend/database"
 	"m2m-backend/models"
@@ -14,7 +13,7 @@ import (
 
 // ValidateCompanyOwnership validates that the authenticated user owns the specified company
 // Returns the company if validation succeeds, or sends an error response and returns nil
-func ValidateCompanyOwnership(c *fiber.Ctx, companyID primitive.ObjectID) (*models.Company, error) {
+func ValidateCompanyOwnership(c *fiber.Ctx, companyID uuid.UUID) (*models.Company, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -25,16 +24,17 @@ func ValidateCompanyOwnership(c *fiber.Ctx, companyID primitive.ObjectID) (*mode
 		return nil, fiber.ErrUnauthorized
 	}
 
-	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		c.Status(401).JSON(fiber.Map{"error": "Unauthorized: invalid user ID"})
 		return nil, fiber.ErrUnauthorized
 	}
 
 	// Fetch company from database
-	collection := database.GetCollection("companies")
 	var company models.Company
-	err = collection.FindOne(ctx, bson.M{"_id": companyID}).Decode(&company)
+	err = database.QueryRow(ctx,
+		`SELECT id, user_id, name, created_at, updated_at FROM companies WHERE id = $1`,
+		companyID).Scan(&company.ID, &company.UserID, &company.Name, &company.CreatedAt, &company.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Company not found"})
 		return nil, fiber.ErrNotFound
@@ -54,7 +54,7 @@ func ValidateCompanyOwnership(c *fiber.Ctx, companyID primitive.ObjectID) (*mode
 
 // ValidateCompanyOwnershipByString is a convenience wrapper that accepts company ID as string
 func ValidateCompanyOwnershipByString(c *fiber.Ctx, companyIDStr string) (*models.Company, error) {
-	companyID, err := primitive.ObjectIDFromHex(companyIDStr)
+	companyID, err := uuid.Parse(companyIDStr)
 	if err != nil {
 		c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
 		return nil, fiber.ErrBadRequest
@@ -64,34 +64,42 @@ func ValidateCompanyOwnershipByString(c *fiber.Ctx, companyIDStr string) (*model
 }
 
 // GetUserIDFromContext extracts and validates the user ID from the Fiber context
-func GetUserIDFromContext(c *fiber.Ctx) (primitive.ObjectID, error) {
+func GetUserIDFromContext(c *fiber.Ctx) (uuid.UUID, error) {
 	userIDStr, ok := c.Locals("userId").(string)
 	if !ok {
 		c.Status(401).JSON(fiber.Map{"error": "Unauthorized: user not authenticated"})
-		return primitive.NilObjectID, fiber.ErrUnauthorized
+		return uuid.Nil, fiber.ErrUnauthorized
 	}
 
-	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		c.Status(401).JSON(fiber.Map{"error": "Unauthorized: invalid user ID"})
-		return primitive.NilObjectID, fiber.ErrUnauthorized
+		return uuid.Nil, fiber.ErrUnauthorized
 	}
 
 	return userID, nil
 }
 
 // ValidateTransactionOwnership validates that a transaction belongs to a company owned by the user
-func ValidateTransactionOwnership(c *fiber.Ctx, transactionID primitive.ObjectID) (*models.Transaction, error) {
+func ValidateTransactionOwnership(c *fiber.Ctx, transactionID uuid.UUID) (*models.Transaction, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Fetch transaction
-	collection := database.GetCollection("transactions")
 	var transaction models.Transaction
-	err := collection.FindOne(ctx, bson.M{"_id": transactionID}).Decode(&transaction)
+	var description *string
+	err := database.QueryRow(ctx,
+		`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+		 FROM transactions WHERE id = $1`,
+		transactionID).Scan(&transaction.ID, &transaction.CompanyID, &transaction.Category, &description,
+		&transaction.Amount, &transaction.Month, &transaction.Year, &transaction.Status,
+		&transaction.CreatedAt, &transaction.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Transaction not found"})
 		return nil, fiber.ErrNotFound
+	}
+	if description != nil {
+		transaction.Description = *description
 	}
 
 	// Validate company ownership
@@ -104,14 +112,16 @@ func ValidateTransactionOwnership(c *fiber.Ctx, transactionID primitive.ObjectID
 }
 
 // ValidateCategoryOwnership validates that a category belongs to a company owned by the user
-func ValidateCategoryOwnership(c *fiber.Ctx, categoryID primitive.ObjectID) (*models.Category, error) {
+func ValidateCategoryOwnership(c *fiber.Ctx, categoryID uuid.UUID) (*models.Category, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Fetch category
-	collection := database.GetCollection("categories")
 	var category models.Category
-	err := collection.FindOne(ctx, bson.M{"_id": categoryID}).Decode(&category)
+	err := database.QueryRow(ctx,
+		`SELECT id, company_id, name, type, color, budget, created_at, updated_at FROM categories WHERE id = $1`,
+		categoryID).Scan(&category.ID, &category.CompanyID, &category.Name, &category.Type,
+		&category.Color, &category.Budget, &category.CreatedAt, &category.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Category not found"})
 		return nil, fiber.ErrNotFound
@@ -127,14 +137,17 @@ func ValidateCategoryOwnership(c *fiber.Ctx, categoryID primitive.ObjectID) (*mo
 }
 
 // ValidateRecurringOwnership validates that a recurring transaction belongs to a company owned by the user
-func ValidateRecurringOwnership(c *fiber.Ctx, recurringID primitive.ObjectID) (*models.RecurringTransaction, error) {
+func ValidateRecurringOwnership(c *fiber.Ctx, recurringID uuid.UUID) (*models.RecurringTransaction, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Fetch recurring transaction
-	collection := database.GetCollection("recurring")
 	var recurring models.RecurringTransaction
-	err := collection.FindOne(ctx, bson.M{"_id": recurringID}).Decode(&recurring)
+	err := database.QueryRow(ctx,
+		`SELECT id, company_id, description, amount, category, day_of_month, created_at, updated_at
+		 FROM recurring_transactions WHERE id = $1`,
+		recurringID).Scan(&recurring.ID, &recurring.CompanyID, &recurring.Description,
+		&recurring.Amount, &recurring.Category, &recurring.DayOfMonth, &recurring.CreatedAt, &recurring.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Recurring transaction not found"})
 		return nil, fiber.ErrNotFound
@@ -150,18 +163,28 @@ func ValidateRecurringOwnership(c *fiber.Ctx, recurringID primitive.ObjectID) (*
 }
 
 // ValidateQuoteOwnership validates that a quote belongs to a company owned by the user
-func ValidateQuoteOwnership(c *fiber.Ctx, quoteID primitive.ObjectID) (*models.Quote, error) {
+func ValidateQuoteOwnership(c *fiber.Ctx, quoteID uuid.UUID) (*models.Quote, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Fetch quote
-	collection := database.GetCollection("quotes")
 	var quote models.Quote
-	err := collection.FindOne(ctx, bson.M{"_id": quoteID}).Decode(&quote)
+	var templateID *uuid.UUID
+	err := database.QueryRow(ctx,
+		`SELECT id, company_id, number, client_name, client_email, client_phone, client_document,
+		 client_address, client_city, client_state, client_zip_code, title, description,
+		 subtotal, discount, discount_type, total, status, valid_until, notes, template_id,
+		 created_at, updated_at FROM quotes WHERE id = $1`,
+		quoteID).Scan(&quote.ID, &quote.CompanyID, &quote.Number, &quote.ClientName, &quote.ClientEmail,
+		&quote.ClientPhone, &quote.ClientDocument, &quote.ClientAddress, &quote.ClientCity,
+		&quote.ClientState, &quote.ClientZipCode, &quote.Title, &quote.Description,
+		&quote.Subtotal, &quote.Discount, &quote.DiscountType, &quote.Total, &quote.Status,
+		&quote.ValidUntil, &quote.Notes, &templateID, &quote.CreatedAt, &quote.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Quote not found"})
 		return nil, fiber.ErrNotFound
 	}
+	quote.TemplateID = templateID
 
 	// Validate company ownership
 	_, err = ValidateCompanyOwnership(c, quote.CompanyID)
@@ -173,14 +196,18 @@ func ValidateQuoteOwnership(c *fiber.Ctx, quoteID primitive.ObjectID) (*models.Q
 }
 
 // ValidateQuoteTemplateOwnership validates that a quote template belongs to a company owned by the user
-func ValidateQuoteTemplateOwnership(c *fiber.Ctx, templateID primitive.ObjectID) (*models.QuoteTemplate, error) {
+func ValidateQuoteTemplateOwnership(c *fiber.Ctx, templateID uuid.UUID) (*models.QuoteTemplate, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Fetch template
-	collection := database.GetCollection("quote_templates")
 	var template models.QuoteTemplate
-	err := collection.FindOne(ctx, bson.M{"_id": templateID}).Decode(&template)
+	err := database.QueryRow(ctx,
+		`SELECT id, company_id, name, header_text, footer_text, terms_text, primary_color, logo_url, is_default, created_at, updated_at
+		 FROM quote_templates WHERE id = $1`,
+		templateID).Scan(&template.ID, &template.CompanyID, &template.Name, &template.HeaderText,
+		&template.FooterText, &template.TermsText, &template.PrimaryColor, &template.LogoURL,
+		&template.IsDefault, &template.CreatedAt, &template.UpdatedAt)
 	if err != nil {
 		c.Status(404).JSON(fiber.Map{"error": "Quote template not found"})
 		return nil, fiber.ErrNotFound

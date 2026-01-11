@@ -3,21 +3,19 @@ package models
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 // RefreshToken represents a refresh token stored in the database
 // The actual token is hashed before storage for security
 type RefreshToken struct {
-	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	TokenHash string             `json:"-" bson:"tokenHash"`           // SHA256 hash of the token
-	UserID    primitive.ObjectID `json:"userId" bson:"userId"`         // Reference to the user
-	ExpiresAt time.Time          `json:"expiresAt" bson:"expiresAt"`   // When the token expires
-	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`   // When the token was created
-	IsRevoked bool               `json:"isRevoked" bson:"isRevoked"`   // Whether the token has been revoked
-	RevokedAt *time.Time         `json:"revokedAt,omitempty" bson:"revokedAt,omitempty"` // When it was revoked
-	UserAgent string             `json:"userAgent" bson:"userAgent"`   // Browser/client info for security auditing
-	IPAddress string             `json:"ipAddress" bson:"ipAddress"`   // IP address for security auditing
+	ID        uuid.UUID  `json:"id"`
+	TokenHash string     `json:"-"`                      // SHA256 hash of the token
+	UserID    uuid.UUID  `json:"userId"`                 // Reference to the user
+	ExpiresAt time.Time  `json:"expiresAt"`              // When the token expires
+	CreatedAt time.Time  `json:"createdAt"`              // When the token was created
+	IsRevoked bool       `json:"isRevoked"`              // Whether the token has been revoked
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`    // When it was revoked
 }
 
 // RefreshTokenRequest is the request body for refreshing tokens

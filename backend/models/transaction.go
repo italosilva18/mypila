@@ -1,6 +1,10 @@
 package models
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 const (
 	CategorySalary     = "Salário"
@@ -17,14 +21,16 @@ const (
 )
 
 type Transaction struct {
-	ID          primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	CompanyID   primitive.ObjectID `json:"companyId" bson:"companyId"`
-	Month       string             `json:"month" bson:"month"`
-	Year        int                `json:"year" bson:"year"`
-	Amount      float64            `json:"amount" bson:"amount"`
-	Category    string             `json:"category" bson:"category"`
-	Status      Status             `json:"status" bson:"status"`
-	Description string             `json:"description,omitempty" bson:"description,omitempty"`
+	ID          uuid.UUID `json:"id"`
+	CompanyID   uuid.UUID `json:"companyId"`
+	Month       string    `json:"month"`
+	Year        int       `json:"year"`
+	Amount      float64   `json:"amount"`
+	Category    string    `json:"category"`
+	Status      Status    `json:"status"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type CreateTransactionRequest struct {
@@ -62,6 +68,6 @@ type PaginationMetadata struct {
 
 // PaginatedTransactions contains paginated transaction results
 type PaginatedTransactions struct {
-	Data       []Transaction       `json:"data"`
-	Pagination PaginationMetadata  `json:"pagination"`
+	Data       []Transaction      `json:"data"`
+	Pagination PaginationMetadata `json:"pagination"`
 }

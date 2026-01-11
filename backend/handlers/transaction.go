@@ -7,106 +7,121 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/google/uuid"
 
 	"m2m-backend/database"
 	"m2m-backend/helpers"
 	"m2m-backend/models"
 )
 
-const collectionName = "transactions"
-
 // GetAllTransactions returns paginated transactions (filtered by company with ownership validation)
 func GetAllTransactions(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := database.GetCollection(collectionName)
+	// Get authenticated user ID
+	userID, err := helpers.GetUserIDFromContext(c)
+	if err != nil {
+		return err
+	}
 
 	// Parse pagination parameters
 	page := parsePage(c.Query("page", "1"))
 	limit := parseLimit(c.Query("limit", "50"))
+	offset := (page - 1) * limit
 
-	// Build query filter
-	query := bson.M{}
-	if companyID := c.Query("companyId"); companyID != "" {
-		objID, err := primitive.ObjectIDFromHex(companyID)
+	var total int64
+	var rows interface{ Close() }
+
+	companyIDStr := c.Query("companyId")
+
+	if companyIDStr != "" {
+		companyID, err := uuid.Parse(companyIDStr)
 		if err != nil {
 			return helpers.InvalidIDFormat(c, "companyId")
 		}
 
-		// Validate ownership before allowing query
-		_, err = helpers.ValidateCompanyOwnership(c, objID)
+		// Validate ownership
+		_, err = helpers.ValidateCompanyOwnership(c, companyID)
 		if err != nil {
 			return err
 		}
 
-		query["companyId"] = objID
+		// Count total
+		err = database.QueryRow(ctx,
+			`SELECT COUNT(*) FROM transactions WHERE company_id = $1`,
+			companyID).Scan(&total)
+		if err != nil {
+			return helpers.TransactionFetchFailed(c, err)
+		}
+
+		// Fetch transactions
+		pgRows, err := database.Query(ctx,
+			`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+			 FROM transactions WHERE company_id = $1
+			 ORDER BY year DESC, month DESC
+			 LIMIT $2 OFFSET $3`,
+			companyID, limit, offset)
+		if err != nil {
+			return helpers.TransactionFetchFailed(c, err)
+		}
+		rows = pgRows
 	} else {
-		// If no companyId is provided, return transactions for all user's companies
-		userID, err := helpers.GetUserIDFromContext(c)
+		// Get all transactions for all user's companies
+		// Count total
+		err = database.QueryRow(ctx,
+			`SELECT COUNT(*) FROM transactions t
+			 INNER JOIN companies c ON t.company_id = c.id
+			 WHERE c.user_id = $1`,
+			userID).Scan(&total)
 		if err != nil {
-			return err
+			return helpers.TransactionFetchFailed(c, err)
 		}
 
-		// Get all company IDs owned by user
-		companyCollection := database.GetCollection("companies")
-		companyCursor, err := companyCollection.Find(ctx, bson.M{"userId": userID})
+		// Fetch transactions
+		pgRows, err := database.Query(ctx,
+			`SELECT t.id, t.company_id, t.category, t.description, t.amount, t.month, t.year, t.status, t.created_at, t.updated_at
+			 FROM transactions t
+			 INNER JOIN companies c ON t.company_id = c.id
+			 WHERE c.user_id = $1
+			 ORDER BY t.year DESC, t.month DESC
+			 LIMIT $2 OFFSET $3`,
+			userID, limit, offset)
 		if err != nil {
-			return helpers.CompanyFetchFailed(c, err)
+			return helpers.TransactionFetchFailed(c, err)
 		}
-		defer companyCursor.Close(ctx)
-
-		var companies []models.Company
-		if err := companyCursor.All(ctx, &companies); err != nil {
-			return helpers.DatabaseError(c, "decode_companies", err)
-		}
-
-		// Extract company IDs
-		companyIDs := make([]primitive.ObjectID, len(companies))
-		for i, company := range companies {
-			companyIDs[i] = company.ID
-		}
-
-		// Filter transactions by user's company IDs
-		query["companyId"] = bson.M{"$in": companyIDs}
+		rows = pgRows
 	}
 
-	// Count total documents matching the query
-	total, err := collection.CountDocuments(ctx, query)
-	if err != nil {
-		return helpers.TransactionFetchFailed(c, err)
-	}
+	defer rows.Close()
 
-	// Calculate pagination
-	totalPages := int(math.Ceil(float64(total) / float64(limit)))
-	skip := (page - 1) * limit
-
-	// Query options with pagination and sorting
-	findOptions := options.Find().
-		SetLimit(int64(limit)).
-		SetSkip(int64(skip)).
-		SetSort(bson.D{{Key: "year", Value: -1}, {Key: "month", Value: -1}}) // Most recent first
-
-	// Execute query
-	cursor, err := collection.Find(ctx, query, findOptions)
-	if err != nil {
-		return helpers.TransactionFetchFailed(c, err)
-	}
-	defer cursor.Close(ctx)
-
+	// Scan transactions
 	var transactions []models.Transaction
-	if err := cursor.All(ctx, &transactions); err != nil {
-		return helpers.DatabaseError(c, "decode_transactions", err)
+	pgRows := rows.(interface {
+		Close()
+		Next() bool
+		Scan(dest ...interface{}) error
+	})
+
+	for pgRows.Next() {
+		var t models.Transaction
+		var description *string
+		if err := pgRows.Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "scan_transaction", err)
+		}
+		if description != nil {
+			t.Description = *description
+		}
+		transactions = append(transactions, t)
 	}
 
 	if transactions == nil {
 		transactions = []models.Transaction{}
 	}
 
-	// Build paginated response
+	// Calculate pagination
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+
 	response := models.PaginatedTransactions{
 		Data: transactions,
 		Pagination: models.PaginationMetadata{
@@ -143,19 +158,38 @@ func parseLimit(limitStr string) int {
 
 // GetTransaction returns a single transaction by ID (ownership validated)
 func GetTransaction(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	transactionID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	transaction, err := helpers.ValidateTransactionOwnership(c, objID)
+	transaction, err := helpers.ValidateTransactionOwnership(c, transactionID)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(transaction)
+	// Fetch full transaction
+	var t models.Transaction
+	var description *string
+	err = database.QueryRow(ctx,
+		`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+		 FROM transactions WHERE id = $1`,
+		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return helpers.TransactionNotFound(c)
+	}
+	if description != nil {
+		t.Description = *description
+	}
+
+	_ = transaction // ownership validation returns the transaction
+
+	return c.JSON(t)
 }
 
 // CreateTransaction creates a new transaction
@@ -177,10 +211,8 @@ func CreateTransaction(c *fiber.Ctx) error {
 		helpers.ValidateRange(req.Year, 2000, 2100, "year"),
 		helpers.ValidateStatus(string(req.Status)),
 		helpers.ValidateNoScriptTags(req.Description, "description"),
-		helpers.ValidateMongoInjection(req.Description, "description"),
 		helpers.ValidateSQLInjection(req.Description, "description"),
 		helpers.ValidateNoScriptTags(req.Category, "category"),
-		helpers.ValidateMongoInjection(req.Category, "category"),
 		helpers.ValidateSQLInjection(req.Category, "category"),
 	)
 
@@ -192,7 +224,7 @@ func CreateTransaction(c *fiber.Ctx) error {
 	req.Description = helpers.SanitizeString(req.Description)
 	req.Category = helpers.SanitizeString(req.Category)
 
-	companyID, err := primitive.ObjectIDFromHex(req.CompanyID)
+	companyID, err := uuid.Parse(req.CompanyID)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
@@ -203,8 +235,9 @@ func CreateTransaction(c *fiber.Ctx) error {
 		return err
 	}
 
+	now := time.Now()
 	transaction := models.Transaction{
-		ID:          primitive.NewObjectID(),
+		ID:          uuid.New(),
 		CompanyID:   companyID,
 		Month:       req.Month,
 		Year:        req.Year,
@@ -212,11 +245,16 @@ func CreateTransaction(c *fiber.Ctx) error {
 		Category:    req.Category,
 		Status:      req.Status,
 		Description: req.Description,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
-	collection := database.GetCollection(collectionName)
-
-	_, err = collection.InsertOne(ctx, transaction)
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO transactions (id, company_id, category, description, amount, month, year, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		transaction.ID, transaction.CompanyID, transaction.Category, transaction.Description,
+		transaction.Amount, transaction.Month, transaction.Year, transaction.Status,
+		transaction.CreatedAt, transaction.UpdatedAt)
 	if err != nil {
 		return helpers.TransactionCreateFailed(c, err)
 	}
@@ -230,13 +268,13 @@ func UpdateTransaction(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	transactionID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateTransactionOwnership(c, objID)
+	_, err = helpers.ValidateTransactionOwnership(c, transactionID)
 	if err != nil {
 		return err
 	}
@@ -255,10 +293,8 @@ func UpdateTransaction(c *fiber.Ctx) error {
 		helpers.ValidateRange(req.Year, 2000, 2100, "year"),
 		helpers.ValidateStatus(string(req.Status)),
 		helpers.ValidateNoScriptTags(req.Description, "description"),
-		helpers.ValidateMongoInjection(req.Description, "description"),
 		helpers.ValidateSQLInjection(req.Description, "description"),
 		helpers.ValidateNoScriptTags(req.Category, "category"),
-		helpers.ValidateMongoInjection(req.Category, "category"),
 		helpers.ValidateSQLInjection(req.Category, "category"),
 	)
 
@@ -270,33 +306,34 @@ func UpdateTransaction(c *fiber.Ctx) error {
 	req.Description = helpers.SanitizeString(req.Description)
 	req.Category = helpers.SanitizeString(req.Category)
 
-	collection := database.GetCollection(collectionName)
-
-	update := bson.M{
-		"$set": bson.M{
-			"month":       req.Month,
-			"year":        req.Year,
-			"amount":      req.Amount,
-			"category":    req.Category,
-			"status":      req.Status,
-			"description": req.Description,
-		},
-	}
-
-	result, err := collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
+	now := time.Now()
+	result, err := database.Pool.Exec(ctx,
+		`UPDATE transactions SET month = $1, year = $2, amount = $3, category = $4, status = $5, description = $6, updated_at = $7
+		 WHERE id = $8`,
+		req.Month, req.Year, req.Amount, req.Category, req.Status, req.Description, now, transactionID)
 	if err != nil {
 		return helpers.TransactionUpdateFailed(c, err)
 	}
 
-	if result.MatchedCount == 0 {
+	if result.RowsAffected() == 0 {
 		return helpers.TransactionNotFound(c)
 	}
 
 	// Fetch updated transaction
-	var transaction models.Transaction
-	collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&transaction)
+	var t models.Transaction
+	var description *string
+	err = database.QueryRow(ctx,
+		`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+		 FROM transactions WHERE id = $1`,
+		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return helpers.DatabaseError(c, "fetch_transaction", err)
+	}
+	if description != nil {
+		t.Description = *description
+	}
 
-	return c.JSON(transaction)
+	return c.JSON(t)
 }
 
 // DeleteTransaction deletes a transaction (ownership validated)
@@ -305,25 +342,25 @@ func DeleteTransaction(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	transactionID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateTransactionOwnership(c, objID)
+	_, err = helpers.ValidateTransactionOwnership(c, transactionID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection(collectionName)
-
-	result, err := collection.DeleteOne(ctx, bson.M{"_id": objID})
+	result, err := database.Pool.Exec(ctx,
+		`DELETE FROM transactions WHERE id = $1`,
+		transactionID)
 	if err != nil {
 		return helpers.TransactionDeleteFailed(c, err)
 	}
 
-	if result.DeletedCount == 0 {
+	if result.RowsAffected() == 0 {
 		return helpers.TransactionNotFound(c)
 	}
 
@@ -335,70 +372,50 @@ func GetStats(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := database.GetCollection(collectionName)
+	userID, err := helpers.GetUserIDFromContext(c)
+	if err != nil {
+		return err
+	}
 
-	query := bson.M{}
-	if companyID := c.Query("companyId"); companyID != "" {
-		objID, err := primitive.ObjectIDFromHex(companyID)
+	companyIDStr := c.Query("companyId")
+
+	var stats models.Stats
+
+	if companyIDStr != "" {
+		companyID, err := uuid.Parse(companyIDStr)
 		if err != nil {
 			return helpers.InvalidIDFormat(c, "companyId")
 		}
 
 		// Validate ownership
-		_, err = helpers.ValidateCompanyOwnership(c, objID)
+		_, err = helpers.ValidateCompanyOwnership(c, companyID)
 		if err != nil {
 			return err
 		}
 
-		query["companyId"] = objID
+		// Get stats for specific company
+		err = database.QueryRow(ctx,
+			`SELECT
+				COALESCE(SUM(CASE WHEN status = 'PAGO' THEN amount ELSE 0 END), 0) as paid,
+				COALESCE(SUM(CASE WHEN status = 'ABERTO' THEN amount ELSE 0 END), 0) as open,
+				COALESCE(SUM(amount), 0) as total
+			 FROM transactions WHERE company_id = $1`,
+			companyID).Scan(&stats.Paid, &stats.Open, &stats.Total)
 	} else {
-		// If no companyId, return stats for all user's companies
-		userID, err := helpers.GetUserIDFromContext(c)
-		if err != nil {
-			return err
-		}
-
-		// Get all company IDs owned by user
-		companyCollection := database.GetCollection("companies")
-		companyCursor, err := companyCollection.Find(ctx, bson.M{"userId": userID})
-		if err != nil {
-			return helpers.CompanyFetchFailed(c, err)
-		}
-		defer companyCursor.Close(ctx)
-
-		var companies []models.Company
-		if err := companyCursor.All(ctx, &companies); err != nil {
-			return helpers.DatabaseError(c, "decode_companies", err)
-		}
-
-		// Extract company IDs
-		companyIDs := make([]primitive.ObjectID, len(companies))
-		for i, company := range companies {
-			companyIDs[i] = company.ID
-		}
-
-		query["companyId"] = bson.M{"$in": companyIDs}
+		// Get stats for all user's companies
+		err = database.QueryRow(ctx,
+			`SELECT
+				COALESCE(SUM(CASE WHEN t.status = 'PAGO' THEN t.amount ELSE 0 END), 0) as paid,
+				COALESCE(SUM(CASE WHEN t.status = 'ABERTO' THEN t.amount ELSE 0 END), 0) as open,
+				COALESCE(SUM(t.amount), 0) as total
+			 FROM transactions t
+			 INNER JOIN companies c ON t.company_id = c.id
+			 WHERE c.user_id = $1`,
+			userID).Scan(&stats.Paid, &stats.Open, &stats.Total)
 	}
 
-	cursor, err := collection.Find(ctx, query)
 	if err != nil {
 		return helpers.TransactionFetchFailed(c, err)
-	}
-	defer cursor.Close(ctx)
-
-	var transactions []models.Transaction
-	if err := cursor.All(ctx, &transactions); err != nil {
-		return helpers.DatabaseError(c, "decode_transactions", err)
-	}
-
-	stats := models.Stats{Paid: 0, Open: 0, Total: 0}
-	for _, t := range transactions {
-		if t.Status == models.StatusPaid {
-			stats.Paid += t.Amount
-		} else {
-			stats.Open += t.Amount
-		}
-		stats.Total += t.Amount
 	}
 
 	return c.JSON(stats)
@@ -410,18 +427,16 @@ func ToggleStatus(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	transactionID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
-	// Validate ownership
-	transaction, err := helpers.ValidateTransactionOwnership(c, objID)
+	// Validate ownership and get current transaction
+	transaction, err := helpers.ValidateTransactionOwnership(c, transactionID)
 	if err != nil {
 		return err
 	}
-
-	collection := database.GetCollection(collectionName)
 
 	// Toggle status
 	newStatus := models.StatusOpen
@@ -429,13 +444,16 @@ func ToggleStatus(c *fiber.Ctx) error {
 		newStatus = models.StatusPaid
 	}
 
-	// Update
-	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, bson.M{"$set": bson.M{"status": newStatus}})
+	now := time.Now()
+	_, err = database.Pool.Exec(ctx,
+		`UPDATE transactions SET status = $1, updated_at = $2 WHERE id = $3`,
+		newStatus, now, transactionID)
 	if err != nil {
 		return helpers.TransactionUpdateFailed(c, err)
 	}
 
 	transaction.Status = newStatus
+	transaction.UpdatedAt = now
 	return c.JSON(transaction)
 }
 
@@ -444,10 +462,9 @@ func SeedTransactions(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := database.GetCollection(collectionName)
-
 	// Check if already has data
-	count, err := collection.CountDocuments(ctx, bson.M{})
+	var count int64
+	err := database.QueryRow(ctx, "SELECT COUNT(*) FROM transactions").Scan(&count)
 	if err != nil {
 		return helpers.DatabaseError(c, "count_transactions", err)
 	}
@@ -456,58 +473,44 @@ func SeedTransactions(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "Data already seeded", "count": count})
 	}
 
-	// Check for M2M Company
-	companyCollection := database.GetCollection("companies")
-	var m2mCompany models.Company
-	err = companyCollection.FindOne(ctx, bson.M{"name": "M2M Financeiro"}).Decode(&m2mCompany)
-
-	// Create M2M company if it helps to seed
+	// Get current user ID for seeding
+	userID, err := helpers.GetUserIDFromContext(c)
 	if err != nil {
-		// Get current user ID for seeding
-		userID, err := helpers.GetUserIDFromContext(c)
-		if err != nil {
-			return err
-		}
+		return err
+	}
 
-		m2mCompany = models.Company{
-			ID:        primitive.NewObjectID(),
-			UserID:    userID,
-			Name:      "M2M Financeiro",
-			CreatedAt: time.Now(),
-		}
-		if _, err := companyCollection.InsertOne(ctx, m2mCompany); err != nil {
+	// Check for company
+	var companyID uuid.UUID
+	err = database.QueryRow(ctx, "SELECT id FROM companies WHERE user_id = $1 LIMIT 1", userID).Scan(&companyID)
+	if err != nil {
+		// Create company
+		companyID = uuid.New()
+		now := time.Now()
+		_, err = database.Pool.Exec(ctx,
+			`INSERT INTO companies (id, user_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+			companyID, userID, "MyPila", now, now)
+		if err != nil {
 			return helpers.CompanyCreateFailed(c, err)
 		}
 	}
 
-	// Initial transactions
-	initialData := []interface{}{
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Janeiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Fevereiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Marco", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Abril", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Maio", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Junho", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Julho", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Agosto", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Setembro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Outubro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Novembro", Year: 2024, Amount: 5000, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Dezembro", Year: 2024, Amount: 5000, Category: models.CategorySalary, Status: models.StatusOpen},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Acumulado", Year: 2024, Amount: 3765.34, Category: models.CategoryVacation, Status: models.StatusOpen, Description: "Baseado no salario da carteira R$ 1.412"},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Agosto", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Setembro", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Outubro", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Novembro", Year: 2024, Amount: 1100, Category: models.CategoryAICost, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Dezembro", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusOpen},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Novembro", Year: 2024, Amount: 1000, Category: models.CategoryDockerCost, Status: models.StatusOpen},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Dezembro", Year: 2024, Amount: 1000, Category: models.CategoryDockerCost, Status: models.StatusOpen},
+	// Insert sample transactions
+	now := time.Now()
+	sampleData := []models.Transaction{
+		{ID: uuid.New(), CompanyID: companyID, Month: "Janeiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid, CreatedAt: now, UpdatedAt: now},
+		{ID: uuid.New(), CompanyID: companyID, Month: "Fevereiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid, CreatedAt: now, UpdatedAt: now},
+		{ID: uuid.New(), CompanyID: companyID, Month: "Marco", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid, CreatedAt: now, UpdatedAt: now},
 	}
 
-	_, err = collection.InsertMany(ctx, initialData)
-	if err != nil {
-		return helpers.DatabaseError(c, "seed_transactions", err)
+	for _, t := range sampleData {
+		_, err = database.Pool.Exec(ctx,
+			`INSERT INTO transactions (id, company_id, category, description, amount, month, year, status, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			t.ID, t.CompanyID, t.Category, t.Description, t.Amount, t.Month, t.Year, t.Status, t.CreatedAt, t.UpdatedAt)
+		if err != nil {
+			return helpers.DatabaseError(c, "seed_transactions", err)
+		}
 	}
 
-	return c.Status(201).JSON(fiber.Map{"message": "Data seeded successfully", "count": len(initialData)})
+	return c.Status(201).JSON(fiber.Map{"message": "Data seeded successfully", "count": len(sampleData)})
 }

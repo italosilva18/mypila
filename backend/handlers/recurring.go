@@ -3,18 +3,21 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"m2m-backend/database"
-	"m2m-backend/helpers"
-	"m2m-backend/models"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
+
+	"m2m-backend/database"
+	"m2m-backend/helpers"
+	"m2m-backend/models"
 )
 
 // CreateRecurring adds a new recurring rule
 func CreateRecurring(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	var req models.CreateRecurringRequest
 	if err := c.BodyParser(&req); err != nil {
 		return helpers.InvalidRequestBody(c)
@@ -28,10 +31,8 @@ func CreateRecurring(c *fiber.Ctx) error {
 		helpers.ValidateDayOfMonth(req.DayOfMonth),
 		helpers.ValidateRequired(req.Category, "category"),
 		helpers.ValidateNoScriptTags(req.Description, "description"),
-		helpers.ValidateMongoInjection(req.Description, "description"),
 		helpers.ValidateSQLInjection(req.Description, "description"),
 		helpers.ValidateNoScriptTags(req.Category, "category"),
-		helpers.ValidateMongoInjection(req.Category, "category"),
 		helpers.ValidateSQLInjection(req.Category, "category"),
 	)
 
@@ -43,32 +44,34 @@ func CreateRecurring(c *fiber.Ctx) error {
 	req.Description = helpers.SanitizeString(req.Description)
 	req.Category = helpers.SanitizeString(req.Category)
 
-	// Convert companyId string to ObjectID
-	companyObjID, err := primitive.ObjectIDFromHex(req.CompanyID)
+	// Convert companyId string to UUID
+	companyUUID, err := uuid.Parse(req.CompanyID)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
 
+	now := time.Now()
 	rule := models.RecurringTransaction{
-		ID:          primitive.NewObjectID(),
-		CompanyID:   companyObjID,
+		ID:          uuid.New(),
+		CompanyID:   companyUUID,
 		Description: req.Description,
 		Amount:      req.Amount,
 		Category:    req.Category,
 		DayOfMonth:  req.DayOfMonth,
-		CreatedAt:   time.Now(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
-	collection := database.GetCollection("recurring")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err = collection.InsertOne(ctx, rule)
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO recurring_transactions (id, company_id, description, amount, category, day_of_month, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		rule.ID, rule.CompanyID, rule.Description, rule.Amount, rule.Category, rule.DayOfMonth, rule.CreatedAt, rule.UpdatedAt)
 	if err != nil {
 		return helpers.RecurringCreateFailed(c, err)
 	}
@@ -78,37 +81,43 @@ func CreateRecurring(c *fiber.Ctx) error {
 
 // GetRecurring lists rules for a company
 func GetRecurring(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	companyID := c.Query("companyId")
 	if companyID == "" {
 		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
-	// Convert companyId string to ObjectID
-	companyObjID, err := primitive.ObjectIDFromHex(companyID)
+	// Convert companyId string to UUID
+	companyUUID, err := uuid.Parse(companyID)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection("recurring")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
+	rows, err := database.Query(ctx,
+		`SELECT id, company_id, description, amount, category, day_of_month, created_at, updated_at
+		 FROM recurring_transactions WHERE company_id = $1 ORDER BY day_of_month`,
+		companyUUID)
 	if err != nil {
 		return helpers.RecurringFetchFailed(c, err)
 	}
-	defer cursor.Close(ctx)
+	defer rows.Close()
 
 	var rules []models.RecurringTransaction
-	if err = cursor.All(ctx, &rules); err != nil {
-		return helpers.DatabaseError(c, "decode_recurring_rules", err)
+	for rows.Next() {
+		var rule models.RecurringTransaction
+		if err := rows.Scan(&rule.ID, &rule.CompanyID, &rule.Description, &rule.Amount,
+			&rule.Category, &rule.DayOfMonth, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "decode_recurring_rules", err)
+		}
+		rules = append(rules, rule)
 	}
 
 	if rules == nil {
@@ -120,34 +129,37 @@ func GetRecurring(c *fiber.Ctx) error {
 
 // DeleteRecurring removes a rule
 func DeleteRecurring(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	recurringID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateRecurringOwnership(c, objID)
+	_, err = helpers.ValidateRecurringOwnership(c, recurringID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection("recurring")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
-
+	_, err = database.Pool.Exec(ctx, `DELETE FROM recurring_transactions WHERE id = $1`, recurringID)
 	if err != nil {
 		return helpers.RecurringDeleteFailed(c, err)
 	}
+
 	return c.SendStatus(204)
 }
 
 // ProcessRecurring checks and creates transactions for the given month/year
 func ProcessRecurring(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	companyID := c.Query("companyId")
 	month := c.Query("month")
-	year := c.Query("year") // e.g. "2024" or 2024 (int)
+	year := c.Query("year")
 
 	if companyID == "" {
 		return helpers.MissingRequiredParam(c, "companyId")
@@ -171,64 +183,74 @@ func ProcessRecurring(c *fiber.Ctx) error {
 		return helpers.SendValidationError(c, err.Field, err.Message)
 	}
 
-	// Convert companyID string to ObjectID
-	companyObjID, err := primitive.ObjectIDFromHex(companyID)
+	// Convert companyID string to UUID
+	companyUUID, err := uuid.Parse(companyID)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	rulesColl := database.GetCollection("recurring")
-	transColl := database.GetCollection("transactions")
-
-	// Get all rules
-	cursor, err := rulesColl.Find(ctx, bson.M{"companyId": companyObjID})
+	// Get all rules for this company
+	rows, err := database.Query(ctx,
+		`SELECT id, company_id, description, amount, category, day_of_month, created_at, updated_at
+		 FROM recurring_transactions WHERE company_id = $1`,
+		companyUUID)
 	if err != nil {
 		return helpers.RecurringFetchFailed(c, err)
 	}
-	defer cursor.Close(ctx)
+	defer rows.Close()
 
 	var rules []models.RecurringTransaction
-	if err = cursor.All(ctx, &rules); err != nil {
-		return helpers.DatabaseError(c, "decode_recurring_rules", err)
+	for rows.Next() {
+		var rule models.RecurringTransaction
+		if err := rows.Scan(&rule.ID, &rule.CompanyID, &rule.Description, &rule.Amount,
+			&rule.Category, &rule.DayOfMonth, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "decode_recurring_rules", err)
+		}
+		rules = append(rules, rule)
 	}
 
 	createdCount := 0
 
 	for _, rule := range rules {
 		// Check if transaction already exists for this rule + month + year
-		// We use Description + Amount + Month + Year as a pseudo-unique key check
-		// Or ideally store "SourceRuleID" in Transaction, but for now simple check:
-		filter := bson.M{
-			"companyId":   companyObjID,
-			"description": rule.Description,
-			"month":       month,
-			"year":        yearInt,
+		var count int
+		err := database.QueryRow(ctx,
+			`SELECT COUNT(*) FROM transactions
+			 WHERE company_id = $1 AND description = $2 AND month = $3 AND year = $4`,
+			companyUUID, rule.Description, month, yearInt).Scan(&count)
+		if err != nil {
+			continue
 		}
 
-		count, _ := transColl.CountDocuments(ctx, filter)
-
 		if count == 0 {
-			// Create it
+			// Create new transaction
+			now := time.Now()
 			newTrans := models.Transaction{
-				ID:          primitive.NewObjectID(),
-				CompanyID:   companyObjID,
+				ID:          uuid.New(),
+				CompanyID:   companyUUID,
 				Description: rule.Description,
 				Amount:      rule.Amount,
 				Category:    rule.Category,
 				Status:      models.StatusOpen,
 				Month:       month,
 				Year:        yearInt,
+				CreatedAt:   now,
+				UpdatedAt:   now,
 			}
-			if _, err := transColl.InsertOne(ctx, newTrans); err != nil {
+
+			_, err := database.Pool.Exec(ctx,
+				`INSERT INTO transactions (id, company_id, category, description, amount, month, year, status, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				newTrans.ID, newTrans.CompanyID, newTrans.Category, newTrans.Description,
+				newTrans.Amount, newTrans.Month, newTrans.Year, newTrans.Status,
+				newTrans.CreatedAt, newTrans.UpdatedAt)
+			if err != nil {
 				// Log error but continue processing other rules
 				continue
 			}

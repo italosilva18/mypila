@@ -10,21 +10,22 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Nunito', 'system-ui', 'sans-serif'],
+                sans: ['"Courier New"', 'Courier', 'monospace'],
+                mono: ['"Courier New"', 'Courier', 'monospace'],
             },
             colors: {
-                // Teal/Mint Primary Colors
+                // Black/Dark Primary Colors
                 primary: {
-                    50: 'hsl(168 65% 95%)',
-                    100: 'hsl(168 65% 90%)',
-                    200: 'hsl(168 65% 80%)',
-                    300: 'hsl(168 65% 70%)',
-                    400: 'hsl(168 65% 60%)',
-                    500: 'hsl(168 65% 55%)',
-                    600: 'hsl(168 65% 45%)',
-                    700: 'hsl(168 65% 35%)',
-                    800: 'hsl(168 65% 25%)',
-                    900: 'hsl(168 65% 15%)',
+                    50: 'hsl(0 0% 95%)',
+                    100: 'hsl(0 0% 90%)',
+                    200: 'hsl(0 0% 80%)',
+                    300: 'hsl(0 0% 70%)',
+                    400: 'hsl(0 0% 50%)',
+                    500: 'hsl(0 0% 25%)',
+                    600: 'hsl(0 0% 20%)',
+                    700: 'hsl(0 0% 15%)',
+                    800: 'hsl(0 0% 10%)',
+                    900: 'hsl(0 0% 5%)',
                 },
                 // Background/Foreground
                 background: 'hsl(0 0% 98%)',
@@ -70,8 +71,8 @@ export default {
                 'hover': '0 8px 30px -4px rgba(0,0,0,0.15)',
             },
             backgroundImage: {
-                'gradient-primary': 'linear-gradient(135deg, hsl(168 65% 55%) 0%, hsl(168 50% 65%) 100%)',
-                'gradient-header': 'linear-gradient(180deg, hsl(168 65% 50%) 0%, hsl(168 65% 55%) 100%)',
+                'gradient-primary': 'linear-gradient(135deg, hsl(0 0% 20%) 0%, hsl(0 0% 30%) 100%)',
+                'gradient-header': 'linear-gradient(180deg, hsl(0 0% 15%) 0%, hsl(0 0% 20%) 100%)',
             },
         },
     },

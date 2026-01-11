@@ -3,14 +3,15 @@ package models
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 type Company struct {
-	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	UserID    primitive.ObjectID `json:"userId" bson:"userId"`
-	Name      string             `json:"name" bson:"name"`
-	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"userId"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type CreateCompanyRequest struct {

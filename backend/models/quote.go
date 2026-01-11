@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 type QuoteStatus string
@@ -25,42 +25,44 @@ const (
 
 // QuoteItem representa um item do orçamento
 type QuoteItem struct {
-	ID          primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	Description string             `json:"description" bson:"description"`
-	Quantity    float64            `json:"quantity" bson:"quantity"`
-	UnitPrice   float64            `json:"unitPrice" bson:"unitPrice"`
-	Total       float64            `json:"total" bson:"total"`
-	CategoryID  primitive.ObjectID `json:"categoryId,omitempty" bson:"categoryId,omitempty"`
+	ID          uuid.UUID  `json:"id"`
+	QuoteID     uuid.UUID  `json:"quoteId"`
+	Description string     `json:"description"`
+	Quantity    float64    `json:"quantity"`
+	UnitPrice   float64    `json:"unitPrice"`
+	Total       float64    `json:"total"`
+	CategoryID  *uuid.UUID `json:"categoryId,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 // Quote representa um orçamento comercial
 type Quote struct {
-	ID             primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	CompanyID      primitive.ObjectID `json:"companyId" bson:"companyId"`
-	Number         string             `json:"number" bson:"number"` // Auto: "ORC-2024-001"
+	ID             uuid.UUID   `json:"id"`
+	CompanyID      uuid.UUID   `json:"companyId"`
+	Number         string      `json:"number"` // Auto: "ORC-2024-001"
 	// Dados do Cliente (cadastro completo)
-	ClientName     string             `json:"clientName" bson:"clientName"`
-	ClientEmail    string             `json:"clientEmail,omitempty" bson:"clientEmail,omitempty"`
-	ClientPhone    string             `json:"clientPhone,omitempty" bson:"clientPhone,omitempty"`
-	ClientDocument string             `json:"clientDocument,omitempty" bson:"clientDocument,omitempty"` // CPF ou CNPJ
-	ClientAddress  string             `json:"clientAddress,omitempty" bson:"clientAddress,omitempty"`
-	ClientCity     string             `json:"clientCity,omitempty" bson:"clientCity,omitempty"`
-	ClientState    string             `json:"clientState,omitempty" bson:"clientState,omitempty"`
-	ClientZipCode  string             `json:"clientZipCode,omitempty" bson:"clientZipCode,omitempty"`
+	ClientName     string      `json:"clientName"`
+	ClientEmail    string      `json:"clientEmail,omitempty"`
+	ClientPhone    string      `json:"clientPhone,omitempty"`
+	ClientDocument string      `json:"clientDocument,omitempty"` // CPF ou CNPJ
+	ClientAddress  string      `json:"clientAddress,omitempty"`
+	ClientCity     string      `json:"clientCity,omitempty"`
+	ClientState    string      `json:"clientState,omitempty"`
+	ClientZipCode  string      `json:"clientZipCode,omitempty"`
 	// Dados do Orçamento
-	Title        string             `json:"title" bson:"title"`
-	Description  string             `json:"description,omitempty" bson:"description,omitempty"`
-	Items        []QuoteItem        `json:"items" bson:"items"`
-	Subtotal     float64            `json:"subtotal" bson:"subtotal"`
-	Discount     float64            `json:"discount" bson:"discount"`
-	DiscountType DiscountType       `json:"discountType" bson:"discountType"`
-	Total        float64            `json:"total" bson:"total"`
-	Status       QuoteStatus        `json:"status" bson:"status"`
-	ValidUntil   time.Time          `json:"validUntil" bson:"validUntil"`
-	Notes        string             `json:"notes,omitempty" bson:"notes,omitempty"`
-	TemplateID   primitive.ObjectID `json:"templateId,omitempty" bson:"templateId,omitempty"`
-	CreatedAt    time.Time          `json:"createdAt" bson:"createdAt"`
-	UpdatedAt    time.Time          `json:"updatedAt" bson:"updatedAt"`
+	Title        string       `json:"title"`
+	Description  string       `json:"description,omitempty"`
+	Items        []QuoteItem  `json:"items"`
+	Subtotal     float64      `json:"subtotal"`
+	Discount     float64      `json:"discount"`
+	DiscountType DiscountType `json:"discountType"`
+	Total        float64      `json:"total"`
+	Status       QuoteStatus  `json:"status"`
+	ValidUntil   time.Time    `json:"validUntil"`
+	Notes        string       `json:"notes,omitempty"`
+	TemplateID   *uuid.UUID   `json:"templateId,omitempty"`
+	CreatedAt    time.Time    `json:"createdAt"`
+	UpdatedAt    time.Time    `json:"updatedAt"`
 }
 
 // CreateQuoteItemRequest para criar item do orçamento

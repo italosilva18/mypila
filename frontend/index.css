@@ -1,24 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Teal/Mint Primary */
-  --primary: hsl(168 65% 55%);
-  --primary-dark: hsl(168 65% 45%);
-  --primary-light: hsl(168 50% 65%);
+  /* Black/Dark Primary */
+  --primary: hsl(0 0% 25%);
+  --primary-dark: hsl(0 0% 15%);
+  --primary-light: hsl(0 0% 40%);
 
   /* Background/Foreground */
   --background: hsl(0 0% 98%);
-  --foreground: hsl(220 20% 20%);
-  --muted: hsl(220 10% 50%);
-  --muted-light: hsl(220 10% 70%);
+  --foreground: hsl(0 0% 15%);
+  --muted: hsl(0 0% 50%);
+  --muted-light: hsl(0 0% 70%);
 
   /* Card */
   --card: hsl(0 0% 100%);
-  --border: hsl(220 10% 90%);
+  --border: hsl(0 0% 88%);
 
   /* State */
   --success: hsl(145 60% 50%);
@@ -26,8 +24,8 @@
   --danger: hsl(0 70% 55%);
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, hsl(168 65% 55%) 0%, hsl(168 50% 65%) 100%);
-  --gradient-header: linear-gradient(180deg, hsl(168 65% 50%) 0%, hsl(168 65% 55%) 100%);
+  --gradient-primary: linear-gradient(135deg, hsl(0 0% 20%) 0%, hsl(0 0% 30%) 100%);
+  --gradient-header: linear-gradient(180deg, hsl(0 0% 15%) 0%, hsl(0 0% 20%) 100%);
 
   /* Shadows */
   --shadow-soft: 0 2px 15px -3px rgba(0,0,0,0.07);
@@ -36,7 +34,7 @@
 
 body {
   @apply text-foreground antialiased;
-  font-family: 'Nunito', system-ui, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   background-color: var(--background);
   min-height: 100vh;
 }
@@ -61,12 +59,12 @@ body {
   .btn-primary {
     background: var(--gradient-primary);
     @apply text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300;
-    box-shadow: 0 4px 15px -3px hsl(168 65% 55% / 0.4);
+    box-shadow: 0 4px 15px -3px hsl(0 0% 20% / 0.4);
   }
 
   .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px -3px hsl(168 65% 55% / 0.5);
+    box-shadow: 0 6px 20px -3px hsl(0 0% 20% / 0.5);
   }
 
   .btn-primary:active {
@@ -94,7 +92,7 @@ body {
 
   .input:focus {
     @apply outline-none border-primary-500;
-    box-shadow: 0 0 0 3px hsl(168 65% 55% / 0.15);
+    box-shadow: 0 0 0 3px hsl(0 0% 25% / 0.15);
   }
 
   .input-error {
@@ -227,8 +225,8 @@ body {
 
 /* Selection */
 ::selection {
-  background-color: hsl(168 65% 55% / 0.2);
-  color: hsl(168 65% 25%);
+  background-color: hsl(0 0% 25% / 0.2);
+  color: hsl(0 0% 10%);
 }
 
 /* Safe area */

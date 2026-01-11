@@ -5,15 +5,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 
 	"m2m-backend/database"
 	"m2m-backend/helpers"
 	"m2m-backend/models"
 )
-
-const quoteTemplateCollection = "quote_templates"
 
 // GetQuoteTemplates lista todos os templates de orcamento de uma empresa
 func GetQuoteTemplates(c *fiber.Ctx) error {
@@ -25,28 +22,34 @@ func GetQuoteTemplates(c *fiber.Ctx) error {
 		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
-	companyObjID, err := primitive.ObjectIDFromHex(companyId)
+	companyUUID, err := uuid.Parse(companyId)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection(quoteTemplateCollection)
-
-	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
+	rows, err := database.Query(ctx,
+		`SELECT id, company_id, name, header_text, footer_text, terms_text, primary_color, logo_url, is_default, created_at, updated_at
+		 FROM quote_templates WHERE company_id = $1 ORDER BY name`,
+		companyUUID)
 	if err != nil {
 		return helpers.QuoteTemplateFetchFailed(c, err)
 	}
-	defer cursor.Close(ctx)
+	defer rows.Close()
 
 	var templates []models.QuoteTemplate
-	if err = cursor.All(ctx, &templates); err != nil {
-		return helpers.DatabaseError(c, "decode_templates", err)
+	for rows.Next() {
+		var t models.QuoteTemplate
+		if err := rows.Scan(&t.ID, &t.CompanyID, &t.Name, &t.HeaderText, &t.FooterText,
+			&t.TermsText, &t.PrimaryColor, &t.LogoURL, &t.IsDefault, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "decode_templates", err)
+		}
+		templates = append(templates, t)
 	}
 
 	if templates == nil {
@@ -59,13 +62,13 @@ func GetQuoteTemplates(c *fiber.Ctx) error {
 // GetQuoteTemplate busca um template por ID
 func GetQuoteTemplate(c *fiber.Ctx) error {
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	templateID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	template, err := helpers.ValidateQuoteTemplateOwnership(c, objID)
+	template, err := helpers.ValidateQuoteTemplateOwnership(c, templateID)
 	if err != nil {
 		return err
 	}
@@ -83,13 +86,13 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
-	companyObjID, err := primitive.ObjectIDFromHex(companyId)
+	companyUUID, err := uuid.Parse(companyId)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
@@ -123,16 +126,11 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 	req.FooterText = helpers.SanitizeString(req.FooterText)
 	req.TermsText = helpers.SanitizeString(req.TermsText)
 
-	collection := database.GetCollection(quoteTemplateCollection)
-
 	// Se este template deve ser o padrao, remover flag dos outros
 	if req.IsDefault {
-		_, err = collection.UpdateMany(ctx, bson.M{
-			"companyId": companyObjID,
-			"isDefault": true,
-		}, bson.M{
-			"$set": bson.M{"isDefault": false},
-		})
+		_, err = database.Pool.Exec(ctx,
+			`UPDATE quote_templates SET is_default = false WHERE company_id = $1 AND is_default = true`,
+			companyUUID)
 		if err != nil {
 			return helpers.DatabaseError(c, "update_existing_templates", err)
 		}
@@ -143,9 +141,10 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 		req.PrimaryColor = "#78716c"
 	}
 
+	now := time.Now()
 	template := models.QuoteTemplate{
-		ID:           primitive.NewObjectID(),
-		CompanyID:    companyObjID,
+		ID:           uuid.New(),
+		CompanyID:    companyUUID,
 		Name:         req.Name,
 		HeaderText:   req.HeaderText,
 		FooterText:   req.FooterText,
@@ -153,10 +152,15 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 		PrimaryColor: req.PrimaryColor,
 		LogoURL:      req.LogoURL,
 		IsDefault:    req.IsDefault,
-		CreatedAt:    time.Now(),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
-	_, err = collection.InsertOne(ctx, template)
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO quote_templates (id, company_id, name, header_text, footer_text, terms_text, primary_color, logo_url, is_default, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		template.ID, template.CompanyID, template.Name, template.HeaderText, template.FooterText,
+		template.TermsText, template.PrimaryColor, template.LogoURL, template.IsDefault, template.CreatedAt, template.UpdatedAt)
 	if err != nil {
 		return helpers.QuoteTemplateCreateFailed(c, err)
 	}
@@ -170,13 +174,13 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	templateID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	existingTemplate, err := helpers.ValidateQuoteTemplateOwnership(c, objID)
+	existingTemplate, err := helpers.ValidateQuoteTemplateOwnership(c, templateID)
 	if err != nil {
 		return err
 	}
@@ -201,41 +205,34 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 		return helpers.SendValidationErrors(c, errors)
 	}
 
-	collection := database.GetCollection(quoteTemplateCollection)
-
 	// Se este template deve ser o padrao, remover flag dos outros
 	if req.IsDefault && !existingTemplate.IsDefault {
-		_, err = collection.UpdateMany(ctx, bson.M{
-			"companyId": existingTemplate.CompanyID,
-			"isDefault": true,
-			"_id":       bson.M{"$ne": objID},
-		}, bson.M{
-			"$set": bson.M{"isDefault": false},
-		})
+		_, err = database.Pool.Exec(ctx,
+			`UPDATE quote_templates SET is_default = false WHERE company_id = $1 AND is_default = true AND id != $2`,
+			existingTemplate.CompanyID, templateID)
 		if err != nil {
 			return helpers.DatabaseError(c, "update_existing_templates", err)
 		}
 	}
 
-	update := bson.M{
-		"$set": bson.M{
-			"name":         helpers.SanitizeString(req.Name),
-			"headerText":   helpers.SanitizeString(req.HeaderText),
-			"footerText":   helpers.SanitizeString(req.FooterText),
-			"termsText":    helpers.SanitizeString(req.TermsText),
-			"primaryColor": req.PrimaryColor,
-			"logoUrl":      req.LogoURL,
-			"isDefault":    req.IsDefault,
-		},
-	}
-
-	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
+	now := time.Now()
+	_, err = database.Pool.Exec(ctx,
+		`UPDATE quote_templates SET name = $1, header_text = $2, footer_text = $3, terms_text = $4,
+		 primary_color = $5, logo_url = $6, is_default = $7, updated_at = $8 WHERE id = $9`,
+		helpers.SanitizeString(req.Name), helpers.SanitizeString(req.HeaderText),
+		helpers.SanitizeString(req.FooterText), helpers.SanitizeString(req.TermsText),
+		req.PrimaryColor, req.LogoURL, req.IsDefault, now, templateID)
 	if err != nil {
 		return helpers.QuoteTemplateUpdateFailed(c, err)
 	}
 
 	var updatedTemplate models.QuoteTemplate
-	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&updatedTemplate)
+	err = database.QueryRow(ctx,
+		`SELECT id, company_id, name, header_text, footer_text, terms_text, primary_color, logo_url, is_default, created_at, updated_at
+		 FROM quote_templates WHERE id = $1`,
+		templateID).Scan(&updatedTemplate.ID, &updatedTemplate.CompanyID, &updatedTemplate.Name, &updatedTemplate.HeaderText,
+		&updatedTemplate.FooterText, &updatedTemplate.TermsText, &updatedTemplate.PrimaryColor,
+		&updatedTemplate.LogoURL, &updatedTemplate.IsDefault, &updatedTemplate.CreatedAt, &updatedTemplate.UpdatedAt)
 	if err != nil {
 		return helpers.DatabaseError(c, "fetch_updated_template", err)
 	}
@@ -249,20 +246,18 @@ func DeleteQuoteTemplate(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	templateID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateQuoteTemplateOwnership(c, objID)
+	_, err = helpers.ValidateQuoteTemplateOwnership(c, templateID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection(quoteTemplateCollection)
-
-	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
+	_, err = database.Pool.Exec(ctx, `DELETE FROM quote_templates WHERE id = $1`, templateID)
 	if err != nil {
 		return helpers.QuoteTemplateDeleteFailed(c, err)
 	}

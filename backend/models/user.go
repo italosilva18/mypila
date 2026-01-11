@@ -3,15 +3,16 @@ package models
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 )
 
 type User struct {
-	ID           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	Name         string             `json:"name" bson:"name"`
-	Email        string             `json:"email" bson:"email"`
-	PasswordHash string             `json:"-" bson:"passwordHash"`
-	CreatedAt    time.Time          `json:"createdAt" bson:"createdAt"`
+	ID           uuid.UUID `json:"id"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type RegisterRequest struct {

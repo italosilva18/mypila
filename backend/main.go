@@ -20,7 +20,6 @@ import (
 	"m2m-backend/handlers"
 	"m2m-backend/helpers"
 	"m2m-backend/middleware"
-	"m2m-backend/migrations"
 )
 
 func main() {
@@ -29,24 +28,18 @@ func main() {
 		log.Fatal("[SECURITY ERROR] Failed to initialize JWT secret:", err)
 	}
 
-	// Connect to MongoDB
+	// Connect to PostgreSQL
 	if err := database.Connect(); err != nil {
-		log.Fatal("Failed to connect to MongoDB:", err)
+		log.Fatal("Failed to connect to PostgreSQL:", err)
 	}
 
 	// Setup graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
-	// Create database indexes for optimal query performance
-	if err := migrations.CreateIndexes(database.DB); err != nil {
-		log.Printf("Warning: Failed to create some indexes: %v", err)
-		// Don't fail the application, indexes are for optimization
-	}
-
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
-		AppName: "M2M Financeiro API",
+		AppName: "MyPila API",
 	})
 
 	// Recover middleware - previne que panics derrubem o servidor
@@ -132,7 +125,7 @@ func main() {
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "m2m-backend"})
+		return c.JSON(fiber.Map{"status": "ok", "service": "mypila-backend"})
 	})
 
 	// API Routes
@@ -233,10 +226,8 @@ func main() {
 		log.Printf("Error during server shutdown: %v", err)
 	}
 
-	// Close MongoDB connection
-	if err := database.Disconnect(); err != nil {
-		log.Printf("Error closing MongoDB connection: %v", err)
-	}
+	// Close PostgreSQL connection
+	database.Disconnect()
 
 	log.Println("Server shutdown complete")
 }

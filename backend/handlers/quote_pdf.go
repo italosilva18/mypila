@@ -8,8 +8,7 @@ import (
 
 	"github.com/go-pdf/fpdf"
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/google/uuid"
 
 	"m2m-backend/database"
 	"m2m-backend/helpers"
@@ -32,32 +31,39 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.SendValidationError(c, "id", "Formato de ID invalido")
 	}
 
 	// Validate ownership e buscar orçamento
-	quote, err := helpers.ValidateQuoteOwnership(c, objID)
+	quote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
+	// Fetch items
+	quote.Items, _ = getQuoteItems(ctx, quote.ID)
+
 	// Buscar template se existir
 	var template *models.QuoteTemplate
-	if !quote.TemplateID.IsZero() {
-		templateCollection := database.GetCollection("quote_templates")
+	if quote.TemplateID != nil {
 		var t models.QuoteTemplate
-		err = templateCollection.FindOne(ctx, bson.M{"_id": quote.TemplateID}).Decode(&t)
+		err = database.QueryRow(ctx,
+			`SELECT id, company_id, name, header_text, footer_text, terms_text, primary_color, logo_url, is_default, created_at, updated_at
+			 FROM quote_templates WHERE id = $1`,
+			*quote.TemplateID).Scan(&t.ID, &t.CompanyID, &t.Name, &t.HeaderText, &t.FooterText,
+			&t.TermsText, &t.PrimaryColor, &t.LogoURL, &t.IsDefault, &t.CreatedAt, &t.UpdatedAt)
 		if err == nil {
 			template = &t
 		}
 	}
 
 	// Buscar empresa para dados do cabeçalho
-	companyCollection := database.GetCollection("companies")
 	var company models.Company
-	err = companyCollection.FindOne(ctx, bson.M{"_id": quote.CompanyID}).Decode(&company)
+	err = database.QueryRow(ctx,
+		`SELECT id, user_id, name, created_at, updated_at FROM companies WHERE id = $1`,
+		quote.CompanyID).Scan(&company.ID, &company.UserID, &company.Name, &company.CreatedAt, &company.UpdatedAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao buscar dados da empresa"})
 	}

@@ -3,53 +3,39 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"m2m-backend/database"
 	"m2m-backend/helpers"
 	"m2m-backend/models"
 )
 
-const quoteCollection = "quotes"
-
 // Mutex to prevent race condition in quote number generation
 var quoteNumberMutex sync.Mutex
 
-// generateQuoteNumber gera numero sequencial para orcamentos: ORC-2024-001
-// Uses mutex to prevent duplicate numbers from concurrent requests
-// Supports both regular context and session context for transaction support
-func generateQuoteNumber(ctx context.Context, companyID primitive.ObjectID) (string, error) {
+// generateQuoteNumber generates a sequential number for quotes: ORC-2024-001
+func generateQuoteNumber(ctx context.Context, companyID uuid.UUID) (string, error) {
 	quoteNumberMutex.Lock()
 	defer quoteNumberMutex.Unlock()
-	collection := database.GetCollection(quoteCollection)
 
 	year := time.Now().Year()
+	prefix := fmt.Sprintf("ORC-%d-", year)
 
-	// Buscar o ultimo orcamento do ano para esta empresa
-	opts := options.FindOne().SetSort(bson.M{"createdAt": -1})
-	filter := bson.M{
-		"companyId": companyID,
-		"number": bson.M{
-			"$regex": fmt.Sprintf("^ORC-%d-", year),
-		},
-	}
-
-	var lastQuote models.Quote
-	err := collection.FindOne(ctx, filter, opts).Decode(&lastQuote)
+	// Find the last quote number for this company this year
+	var lastNumber string
+	err := database.QueryRow(ctx,
+		`SELECT number FROM quotes WHERE company_id = $1 AND number LIKE $2 ORDER BY created_at DESC LIMIT 1`,
+		companyID, prefix+"%").Scan(&lastNumber)
 
 	nextNumber := 1
-	if err == nil {
-		// Extrair numero do ultimo orcamento
+	if err == nil && lastNumber != "" {
 		var lastNum int
-		_, err := fmt.Sscanf(lastQuote.Number, "ORC-%d-%d", new(int), &lastNum)
+		_, err := fmt.Sscanf(lastNumber, "ORC-%d-%d", new(int), &lastNum)
 		if err == nil {
 			nextNumber = lastNum + 1
 		}
@@ -58,41 +44,7 @@ func generateQuoteNumber(ctx context.Context, companyID primitive.ObjectID) (str
 	return fmt.Sprintf("ORC-%d-%03d", year, nextNumber), nil
 }
 
-// generateQuoteNumberInSession generates quote number within a transaction session
-// This ensures the number generation is part of the atomic operation
-func generateQuoteNumberInSession(sessCtx mongo.SessionContext, companyID primitive.ObjectID) (string, error) {
-	quoteNumberMutex.Lock()
-	defer quoteNumberMutex.Unlock()
-	collection := database.GetCollection(quoteCollection)
-
-	year := time.Now().Year()
-
-	// Buscar o ultimo orcamento do ano para esta empresa
-	opts := options.FindOne().SetSort(bson.M{"createdAt": -1})
-	filter := bson.M{
-		"companyId": companyID,
-		"number": bson.M{
-			"$regex": fmt.Sprintf("^ORC-%d-", year),
-		},
-	}
-
-	var lastQuote models.Quote
-	err := collection.FindOne(sessCtx, filter, opts).Decode(&lastQuote)
-
-	nextNumber := 1
-	if err == nil {
-		// Extrair numero do ultimo orcamento
-		var lastNum int
-		_, err := fmt.Sscanf(lastQuote.Number, "ORC-%d-%d", new(int), &lastNum)
-		if err == nil {
-			nextNumber = lastNum + 1
-		}
-	}
-
-	return fmt.Sprintf("ORC-%d-%03d", year, nextNumber), nil
-}
-
-// GetQuotes lista todos os orcamentos de uma empresa
+// GetQuotes lists all quotes for a company
 func GetQuotes(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -102,37 +54,53 @@ func GetQuotes(c *fiber.Ctx) error {
 		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
-	companyObjID, err := primitive.ObjectIDFromHex(companyId)
+	companyUUID, err := uuid.Parse(companyId)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection(quoteCollection)
+	// Build query with optional status filter
+	query := `SELECT id, company_id, number, client_name, client_email, client_phone, client_document,
+		client_address, client_city, client_state, client_zip_code, title, description,
+		subtotal, discount, discount_type, total, status, valid_until, notes, template_id,
+		created_at, updated_at FROM quotes WHERE company_id = $1`
+	args := []interface{}{companyUUID}
 
-	// Filtro opcional por status
-	filter := bson.M{"companyId": companyObjID}
 	if status := c.Query("status"); status != "" {
-		filter["status"] = status
+		query += " AND status = $2"
+		args = append(args, status)
 	}
+	query += " ORDER BY created_at DESC"
 
-	// Ordenar por data de criacao decrescente
-	opts := options.Find().SetSort(bson.M{"createdAt": -1})
-
-	cursor, err := collection.Find(ctx, filter, opts)
+	rows, err := database.Query(ctx, query, args...)
 	if err != nil {
 		return helpers.QuoteFetchFailed(c, err)
 	}
-	defer cursor.Close(ctx)
+	defer rows.Close()
 
 	var quotes []models.Quote
-	if err = cursor.All(ctx, &quotes); err != nil {
-		return helpers.DatabaseError(c, "decode_quotes", err)
+	for rows.Next() {
+		var q models.Quote
+		var templateID *uuid.UUID
+		if err := rows.Scan(&q.ID, &q.CompanyID, &q.Number, &q.ClientName, &q.ClientEmail,
+			&q.ClientPhone, &q.ClientDocument, &q.ClientAddress, &q.ClientCity,
+			&q.ClientState, &q.ClientZipCode, &q.Title, &q.Description,
+			&q.Subtotal, &q.Discount, &q.DiscountType, &q.Total, &q.Status,
+			&q.ValidUntil, &q.Notes, &templateID, &q.CreatedAt, &q.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "decode_quotes", err)
+		}
+		q.TemplateID = templateID
+
+		// Fetch items for this quote
+		q.Items, _ = getQuoteItems(ctx, q.ID)
+
+		quotes = append(quotes, q)
 	}
 
 	if quotes == nil {
@@ -142,25 +110,56 @@ func GetQuotes(c *fiber.Ctx) error {
 	return c.JSON(quotes)
 }
 
-// GetQuote busca um orcamento por ID
+// getQuoteItems fetches items for a quote
+func getQuoteItems(ctx context.Context, quoteID uuid.UUID) ([]models.QuoteItem, error) {
+	rows, err := database.Query(ctx,
+		`SELECT id, quote_id, description, quantity, unit_price, total, category_id, created_at
+		 FROM quote_items WHERE quote_id = $1`,
+		quoteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.QuoteItem
+	for rows.Next() {
+		var item models.QuoteItem
+		if err := rows.Scan(&item.ID, &item.QuoteID, &item.Description, &item.Quantity,
+			&item.UnitPrice, &item.Total, &item.CategoryID, &item.CreatedAt); err != nil {
+			continue
+		}
+		items = append(items, item)
+	}
+
+	if items == nil {
+		items = []models.QuoteItem{}
+	}
+
+	return items, nil
+}
+
+// GetQuote returns a single quote by ID
 func GetQuote(c *fiber.Ctx) error {
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	quote, err := helpers.ValidateQuoteOwnership(c, objID)
+	quote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
+	// Fetch items
+	ctx := context.Background()
+	quote.Items, _ = getQuoteItems(ctx, quote.ID)
+
 	return c.JSON(quote)
 }
 
-// CreateQuote cria um novo orcamento
-// Uses MongoDB transaction to ensure atomic creation of quote with all items
+// CreateQuote creates a new quote
 func CreateQuote(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -170,13 +169,13 @@ func CreateQuote(c *fiber.Ctx) error {
 		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
-	companyObjID, err := primitive.ObjectIDFromHex(companyId)
+	companyUUID, err := uuid.Parse(companyId)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
-	_, err = helpers.ValidateCompanyOwnership(c, companyObjID)
+	_, err = helpers.ValidateCompanyOwnership(c, companyUUID)
 	if err != nil {
 		return err
 	}
@@ -196,8 +195,6 @@ func CreateQuote(c *fiber.Ctx) error {
 		helpers.ValidateMaxLength(req.Notes, "notes", 2000),
 		helpers.ValidateNoScriptTags(req.ClientName, "clientName"),
 		helpers.ValidateNoScriptTags(req.Title, "title"),
-		helpers.ValidateMongoInjection(req.ClientName, "clientName"),
-		helpers.ValidateMongoInjection(req.Title, "title"),
 		helpers.ValidateDiscountValue(req.Discount, req.DiscountType, "discount"),
 	)
 
@@ -208,7 +205,6 @@ func CreateQuote(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validar cada item do orcamento
 	for i, item := range req.Items {
 		if item.Description == "" {
 			errors = append(errors, helpers.ValidationError{
@@ -247,33 +243,12 @@ func CreateQuote(c *fiber.Ctx) error {
 	req.Description = helpers.SanitizeString(req.Description)
 	req.Notes = helpers.SanitizeString(req.Notes)
 
-	// Processar itens e calcular totais
-	var items []models.QuoteItem
+	// Calculate totals
 	var subtotal float64
-
 	for _, item := range req.Items {
-		itemTotal := item.Quantity * item.UnitPrice
-		subtotal += itemTotal
-
-		quoteItem := models.QuoteItem{
-			ID:          primitive.NewObjectID(),
-			Description: helpers.SanitizeString(item.Description),
-			Quantity:    item.Quantity,
-			UnitPrice:   item.UnitPrice,
-			Total:       itemTotal,
-		}
-
-		if item.CategoryID != "" {
-			catID, err := primitive.ObjectIDFromHex(item.CategoryID)
-			if err == nil {
-				quoteItem.CategoryID = catID
-			}
-		}
-
-		items = append(items, quoteItem)
+		subtotal += item.Quantity * item.UnitPrice
 	}
 
-	// Calcular desconto
 	var total float64
 	discountType := models.DiscountType(req.DiscountType)
 	if discountType == "" {
@@ -287,7 +262,7 @@ func CreateQuote(c *fiber.Ctx) error {
 	}
 
 	// Parse validUntil
-	validUntil := time.Now().AddDate(0, 0, 30) // Default: 30 dias
+	validUntil := time.Now().AddDate(0, 0, 30)
 	if req.ValidUntil != "" {
 		parsed, err := time.Parse("2006-01-02", req.ValidUntil)
 		if err == nil {
@@ -296,91 +271,69 @@ func CreateQuote(c *fiber.Ctx) error {
 	}
 
 	// Parse templateID
-	var templateID primitive.ObjectID
+	var templateID *uuid.UUID
 	if req.TemplateID != "" {
-		tid, err := primitive.ObjectIDFromHex(req.TemplateID)
+		tid, err := uuid.Parse(req.TemplateID)
 		if err == nil {
-			templateID = tid
+			templateID = &tid
 		}
 	}
 
-	collection := database.GetCollection(quoteCollection)
+	// Generate quote number
+	quoteNumber, err := generateQuoteNumber(ctx, companyUUID)
+	if err != nil {
+		return helpers.QuoteNumberGenerationFailed(c, err)
+	}
 
-	// Prepare quote object (will be populated with number inside transaction)
 	now := time.Now()
-	var quote models.Quote
+	quoteID := uuid.New()
 
-	// Execute quote creation within a transaction for atomicity
-	// This ensures that quote number generation and insertion are atomic
-	err = database.WithTransaction(ctx, func(sessCtx mongo.SessionContext) error {
-		// Generate quote number within the transaction
-		quoteNumber, err := generateQuoteNumberInSession(sessCtx, companyObjID)
+	// Use transaction for atomic insert
+	err = database.WithTransaction(ctx, func(tx pgx.Tx) error {
+		// Insert quote
+		_, err := tx.Exec(ctx,
+			`INSERT INTO quotes (id, company_id, number, client_name, client_email, client_phone, client_document,
+			 client_address, client_city, client_state, client_zip_code, title, description,
+			 subtotal, discount, discount_type, total, status, valid_until, notes, template_id, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+			quoteID, companyUUID, quoteNumber, req.ClientName, req.ClientEmail, req.ClientPhone, req.ClientDocument,
+			req.ClientAddress, req.ClientCity, req.ClientState, req.ClientZipCode, req.Title, req.Description,
+			subtotal, req.Discount, discountType, total, models.QuoteDraft, validUntil, req.Notes, templateID, now, now)
 		if err != nil {
-			return fmt.Errorf("failed to generate quote number: %w", err)
+			return err
 		}
 
-		quote = models.Quote{
-			ID:             primitive.NewObjectID(),
-			CompanyID:      companyObjID,
-			Number:         quoteNumber,
-			ClientName:     req.ClientName,
-			ClientEmail:    req.ClientEmail,
-			ClientPhone:    req.ClientPhone,
-			ClientDocument: req.ClientDocument,
-			ClientAddress:  req.ClientAddress,
-			ClientCity:     req.ClientCity,
-			ClientState:    req.ClientState,
-			ClientZipCode:  req.ClientZipCode,
-			Title:          req.Title,
-			Description:    req.Description,
-			Items:          items,
-			Subtotal:       subtotal,
-			Discount:       req.Discount,
-			DiscountType:   discountType,
-			Total:          total,
-			Status:         models.QuoteDraft,
-			ValidUntil:     validUntil,
-			Notes:          req.Notes,
-			TemplateID:     templateID,
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		}
+		// Insert items
+		for _, item := range req.Items {
+			itemTotal := item.Quantity * item.UnitPrice
+			var categoryID *uuid.UUID
+			if item.CategoryID != "" {
+				cid, err := uuid.Parse(item.CategoryID)
+				if err == nil {
+					categoryID = &cid
+				}
+			}
 
-		// Insert quote within the transaction
-		_, err = collection.InsertOne(sessCtx, quote)
-		if err != nil {
-			return fmt.Errorf("failed to insert quote: %w", err)
+			_, err := tx.Exec(ctx,
+				`INSERT INTO quote_items (id, quote_id, description, quantity, unit_price, total, category_id, created_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				uuid.New(), quoteID, helpers.SanitizeString(item.Description), item.Quantity, item.UnitPrice, itemTotal, categoryID, now)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		// Check if it's a replica set configuration error and fallback to non-transactional
-		if isReplicaSetError(err) {
-			return createQuoteWithoutTransaction(c, ctx, collection, companyObjID, req, items, subtotal, discountType, total, validUntil, templateID, now)
-		}
-		return helpers.TransactionError(c, "create_quote", err)
+		return helpers.QuoteCreateFailed(c, err)
 	}
 
-	return c.Status(201).JSON(quote)
-}
-
-// createQuoteWithoutTransaction is a fallback for environments without replica set
-func createQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collection *mongo.Collection,
-	companyObjID primitive.ObjectID, req models.CreateQuoteRequest, items []models.QuoteItem,
-	subtotal float64, discountType models.DiscountType, total float64, validUntil time.Time,
-	templateID primitive.ObjectID, now time.Time) error {
-
-	// Generate quote number
-	quoteNumber, err := generateQuoteNumber(ctx, companyObjID)
-	if err != nil {
-		return helpers.QuoteNumberGenerationFailed(c, err)
-	}
-
+	// Build response
 	quote := models.Quote{
-		ID:             primitive.NewObjectID(),
-		CompanyID:      companyObjID,
+		ID:             quoteID,
+		CompanyID:      companyUUID,
 		Number:         quoteNumber,
 		ClientName:     req.ClientName,
 		ClientEmail:    req.ClientEmail,
@@ -392,7 +345,6 @@ func createQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collection
 		ClientZipCode:  req.ClientZipCode,
 		Title:          req.Title,
 		Description:    req.Description,
-		Items:          items,
 		Subtotal:       subtotal,
 		Discount:       req.Discount,
 		DiscountType:   discountType,
@@ -405,48 +357,28 @@ func createQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collection
 		UpdatedAt:      now,
 	}
 
-	_, err = collection.InsertOne(ctx, quote)
-	if err != nil {
-		return helpers.QuoteCreateFailed(c, err)
-	}
+	quote.Items, _ = getQuoteItems(ctx, quoteID)
 
 	return c.Status(201).JSON(quote)
 }
 
-// isReplicaSetError checks if the error is related to missing replica set configuration
-// or if the database client is not initialized (which happens in unit tests)
-func isReplicaSetError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "replica set") ||
-		strings.Contains(errStr, "Transaction numbers") ||
-		strings.Contains(errStr, "not running with replication") ||
-		strings.Contains(errStr, "no replication") ||
-		strings.Contains(errStr, "transaction") ||
-		strings.Contains(errStr, "client not initialized")
-}
-
-// UpdateQuote atualiza um orcamento existente
-// Uses MongoDB transaction to ensure atomic update of quote with all items
+// UpdateQuote updates an existing quote
 func UpdateQuote(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	existingQuote, err := helpers.ValidateQuoteOwnership(c, objID)
+	existingQuote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
-	// Nao permitir edicao de orcamentos executados
 	if existingQuote.Status == models.QuoteExecuted {
 		return helpers.QuoteAlreadyExecuted(c)
 	}
@@ -459,11 +391,7 @@ func UpdateQuote(c *fiber.Ctx) error {
 	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.ClientName, "clientName"),
-		helpers.ValidateMaxLength(req.ClientName, "clientName", 100),
 		helpers.ValidateRequired(req.Title, "title"),
-		helpers.ValidateMaxLength(req.Title, "title", 200),
-		helpers.ValidateNoScriptTags(req.ClientName, "clientName"),
-		helpers.ValidateNoScriptTags(req.Title, "title"),
 		helpers.ValidateDiscountValue(req.Discount, req.DiscountType, "discount"),
 	)
 
@@ -474,59 +402,16 @@ func UpdateQuote(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validar cada item do orcamento
-	for i, item := range req.Items {
-		if item.Description == "" {
-			errors = append(errors, helpers.ValidationError{
-				Field:   fmt.Sprintf("items[%d].description", i),
-				Message: "Descricao do item e obrigatoria",
-			})
-		}
-		if item.Quantity <= 0 {
-			errors = append(errors, helpers.ValidationError{
-				Field:   fmt.Sprintf("items[%d].quantity", i),
-				Message: "Quantidade deve ser maior que zero",
-			})
-		}
-		if item.UnitPrice <= 0 {
-			errors = append(errors, helpers.ValidationError{
-				Field:   fmt.Sprintf("items[%d].unitPrice", i),
-				Message: "Preco unitario deve ser maior que zero",
-			})
-		}
-	}
-
 	if helpers.HasErrors(errors) {
 		return helpers.SendValidationErrors(c, errors)
 	}
 
-	// Processar itens e calcular totais
-	var items []models.QuoteItem
+	// Calculate totals
 	var subtotal float64
-
 	for _, item := range req.Items {
-		itemTotal := item.Quantity * item.UnitPrice
-		subtotal += itemTotal
-
-		quoteItem := models.QuoteItem{
-			ID:          primitive.NewObjectID(),
-			Description: helpers.SanitizeString(item.Description),
-			Quantity:    item.Quantity,
-			UnitPrice:   item.UnitPrice,
-			Total:       itemTotal,
-		}
-
-		if item.CategoryID != "" {
-			catID, err := primitive.ObjectIDFromHex(item.CategoryID)
-			if err == nil {
-				quoteItem.CategoryID = catID
-			}
-		}
-
-		items = append(items, quoteItem)
+		subtotal += item.Quantity * item.UnitPrice
 	}
 
-	// Calcular desconto
 	var total float64
 	discountType := models.DiscountType(req.DiscountType)
 	if discountType == "" {
@@ -539,7 +424,6 @@ func UpdateQuote(c *fiber.Ctx) error {
 		total = subtotal - req.Discount
 	}
 
-	// Parse validUntil
 	validUntil := existingQuote.ValidUntil
 	if req.ValidUntil != "" {
 		parsed, err := time.Parse("2006-01-02", req.ValidUntil)
@@ -548,109 +432,94 @@ func UpdateQuote(c *fiber.Ctx) error {
 		}
 	}
 
-	// Parse templateID
-	var templateID primitive.ObjectID
+	var templateID *uuid.UUID
 	if req.TemplateID != "" {
-		tid, err := primitive.ObjectIDFromHex(req.TemplateID)
+		tid, err := uuid.Parse(req.TemplateID)
 		if err == nil {
-			templateID = tid
+			templateID = &tid
 		}
 	}
 
-	collection := database.GetCollection(quoteCollection)
+	now := time.Now()
 
-	update := bson.M{
-		"$set": bson.M{
-			"clientName":     helpers.SanitizeString(req.ClientName),
-			"clientEmail":    helpers.SanitizeString(req.ClientEmail),
-			"clientPhone":    helpers.SanitizeString(req.ClientPhone),
-			"clientDocument": helpers.SanitizeString(req.ClientDocument),
-			"clientAddress":  helpers.SanitizeString(req.ClientAddress),
-			"clientCity":     helpers.SanitizeString(req.ClientCity),
-			"clientState":    helpers.SanitizeString(req.ClientState),
-			"clientZipCode":  helpers.SanitizeString(req.ClientZipCode),
-			"title":          helpers.SanitizeString(req.Title),
-			"description":    helpers.SanitizeString(req.Description),
-			"items":          items,
-			"subtotal":       subtotal,
-			"discount":       req.Discount,
-			"discountType":   discountType,
-			"total":          total,
-			"validUntil":     validUntil,
-			"notes":          helpers.SanitizeString(req.Notes),
-			"templateId":     templateID,
-			"updatedAt":      time.Now(),
-		},
-	}
-
-	var updatedQuote models.Quote
-
-	// Execute update within a transaction for atomicity
-	err = database.WithTransaction(ctx, func(sessCtx mongo.SessionContext) error {
-		// Update the quote within the transaction
-		_, err := collection.UpdateOne(sessCtx, bson.M{"_id": objID}, update)
+	// Use transaction
+	err = database.WithTransaction(ctx, func(tx pgx.Tx) error {
+		// Update quote
+		_, err := tx.Exec(ctx,
+			`UPDATE quotes SET client_name = $1, client_email = $2, client_phone = $3, client_document = $4,
+			 client_address = $5, client_city = $6, client_state = $7, client_zip_code = $8, title = $9,
+			 description = $10, subtotal = $11, discount = $12, discount_type = $13, total = $14,
+			 valid_until = $15, notes = $16, template_id = $17, updated_at = $18 WHERE id = $19`,
+			helpers.SanitizeString(req.ClientName), helpers.SanitizeString(req.ClientEmail),
+			helpers.SanitizeString(req.ClientPhone), helpers.SanitizeString(req.ClientDocument),
+			helpers.SanitizeString(req.ClientAddress), helpers.SanitizeString(req.ClientCity),
+			helpers.SanitizeString(req.ClientState), helpers.SanitizeString(req.ClientZipCode),
+			helpers.SanitizeString(req.Title), helpers.SanitizeString(req.Description),
+			subtotal, req.Discount, discountType, total, validUntil, helpers.SanitizeString(req.Notes),
+			templateID, now, quoteID)
 		if err != nil {
-			return fmt.Errorf("failed to update quote: %w", err)
+			return err
 		}
 
-		// Fetch the updated quote within the same transaction
-		err = collection.FindOne(sessCtx, bson.M{"_id": objID}).Decode(&updatedQuote)
+		// Delete old items
+		_, err = tx.Exec(ctx, `DELETE FROM quote_items WHERE quote_id = $1`, quoteID)
 		if err != nil {
-			return fmt.Errorf("failed to fetch updated quote: %w", err)
+			return err
+		}
+
+		// Insert new items
+		for _, item := range req.Items {
+			itemTotal := item.Quantity * item.UnitPrice
+			var categoryID *uuid.UUID
+			if item.CategoryID != "" {
+				cid, err := uuid.Parse(item.CategoryID)
+				if err == nil {
+					categoryID = &cid
+				}
+			}
+
+			_, err := tx.Exec(ctx,
+				`INSERT INTO quote_items (id, quote_id, description, quantity, unit_price, total, category_id, created_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				uuid.New(), quoteID, helpers.SanitizeString(item.Description), item.Quantity, item.UnitPrice, itemTotal, categoryID, now)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		// Fallback to non-transactional update if replica set is not configured
-		if isReplicaSetError(err) {
-			return updateQuoteWithoutTransaction(c, ctx, collection, objID, update)
-		}
-		return helpers.TransactionError(c, "update_quote", err)
-	}
-
-	return c.JSON(updatedQuote)
-}
-
-// updateQuoteWithoutTransaction is a fallback for environments without replica set
-func updateQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collection *mongo.Collection,
-	objID primitive.ObjectID, update bson.M) error {
-
-	_, err := collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
-	if err != nil {
 		return helpers.QuoteUpdateFailed(c, err)
 	}
 
-	var updatedQuote models.Quote
-	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&updatedQuote)
-	if err != nil {
-		return helpers.DatabaseError(c, "fetch_updated_quote", err)
-	}
+	// Fetch updated quote
+	updatedQuote, _ := helpers.ValidateQuoteOwnership(c, quoteID)
+	updatedQuote.Items, _ = getQuoteItems(ctx, quoteID)
 
 	return c.JSON(updatedQuote)
 }
 
-// DeleteQuote exclui um orcamento
+// DeleteQuote deletes a quote
 func DeleteQuote(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateQuoteOwnership(c, objID)
+	_, err = helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
-	collection := database.GetCollection(quoteCollection)
-
-	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
+	// CASCADE will handle quote_items
+	_, err = database.Pool.Exec(ctx, `DELETE FROM quotes WHERE id = $1`, quoteID)
 	if err != nil {
 		return helpers.QuoteDeleteFailed(c, err)
 	}
@@ -658,95 +527,24 @@ func DeleteQuote(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-// DuplicateQuote duplica um orcamento existente
-// Uses MongoDB transaction to ensure atomic duplication with new quote number
+// DuplicateQuote duplicates an existing quote
 func DuplicateQuote(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	originalQuote, err := helpers.ValidateQuoteOwnership(c, objID)
+	originalQuote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
-	// Criar novos IDs para os itens
-	var newItems []models.QuoteItem
-	for _, item := range originalQuote.Items {
-		newItem := item
-		newItem.ID = primitive.NewObjectID()
-		newItems = append(newItems, newItem)
-	}
-
-	now := time.Now()
-	var newQuote models.Quote
-	collection := database.GetCollection(quoteCollection)
-
-	// Execute duplication within a transaction for atomicity
-	// This ensures that quote number generation and insertion are atomic
-	err = database.WithTransaction(ctx, func(sessCtx mongo.SessionContext) error {
-		// Generate new quote number within the transaction
-		quoteNumber, err := generateQuoteNumberInSession(sessCtx, originalQuote.CompanyID)
-		if err != nil {
-			return fmt.Errorf("failed to generate quote number: %w", err)
-		}
-
-		newQuote = models.Quote{
-			ID:             primitive.NewObjectID(),
-			CompanyID:      originalQuote.CompanyID,
-			Number:         quoteNumber,
-			ClientName:     originalQuote.ClientName,
-			ClientEmail:    originalQuote.ClientEmail,
-			ClientPhone:    originalQuote.ClientPhone,
-			ClientDocument: originalQuote.ClientDocument,
-			ClientAddress:  originalQuote.ClientAddress,
-			ClientCity:     originalQuote.ClientCity,
-			ClientState:    originalQuote.ClientState,
-			ClientZipCode:  originalQuote.ClientZipCode,
-			Title:          originalQuote.Title + " (Copia)",
-			Description:    originalQuote.Description,
-			Items:          newItems,
-			Subtotal:       originalQuote.Subtotal,
-			Discount:       originalQuote.Discount,
-			DiscountType:   originalQuote.DiscountType,
-			Total:          originalQuote.Total,
-			Status:         models.QuoteDraft,
-			ValidUntil:     now.AddDate(0, 0, 30),
-			Notes:          originalQuote.Notes,
-			TemplateID:     originalQuote.TemplateID,
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		}
-
-		// Insert the duplicated quote within the transaction
-		_, err = collection.InsertOne(sessCtx, newQuote)
-		if err != nil {
-			return fmt.Errorf("failed to insert duplicated quote: %w", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		// Fallback to non-transactional duplication if replica set is not configured
-		if isReplicaSetError(err) {
-			return duplicateQuoteWithoutTransaction(c, ctx, collection, originalQuote, newItems, now)
-		}
-		return helpers.TransactionError(c, "duplicate_quote", err)
-	}
-
-	return c.Status(201).JSON(newQuote)
-}
-
-// duplicateQuoteWithoutTransaction is a fallback for environments without replica set
-func duplicateQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collection *mongo.Collection,
-	originalQuote *models.Quote, newItems []models.QuoteItem, now time.Time) error {
+	originalQuote.Items, _ = getQuoteItems(ctx, originalQuote.ID)
 
 	// Generate new quote number
 	quoteNumber, err := generateQuoteNumber(ctx, originalQuote.CompanyID)
@@ -754,8 +552,47 @@ func duplicateQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collect
 		return helpers.QuoteNumberGenerationFailed(c, err)
 	}
 
+	now := time.Now()
+	newQuoteID := uuid.New()
+
+	// Use transaction
+	err = database.WithTransaction(ctx, func(tx pgx.Tx) error {
+		// Insert new quote
+		_, err := tx.Exec(ctx,
+			`INSERT INTO quotes (id, company_id, number, client_name, client_email, client_phone, client_document,
+			 client_address, client_city, client_state, client_zip_code, title, description,
+			 subtotal, discount, discount_type, total, status, valid_until, notes, template_id, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+			newQuoteID, originalQuote.CompanyID, quoteNumber, originalQuote.ClientName, originalQuote.ClientEmail,
+			originalQuote.ClientPhone, originalQuote.ClientDocument, originalQuote.ClientAddress, originalQuote.ClientCity,
+			originalQuote.ClientState, originalQuote.ClientZipCode, originalQuote.Title+" (Copia)", originalQuote.Description,
+			originalQuote.Subtotal, originalQuote.Discount, originalQuote.DiscountType, originalQuote.Total,
+			models.QuoteDraft, now.AddDate(0, 0, 30), originalQuote.Notes, originalQuote.TemplateID, now, now)
+		if err != nil {
+			return err
+		}
+
+		// Copy items
+		for _, item := range originalQuote.Items {
+			_, err := tx.Exec(ctx,
+				`INSERT INTO quote_items (id, quote_id, description, quantity, unit_price, total, category_id, created_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				uuid.New(), newQuoteID, item.Description, item.Quantity, item.UnitPrice, item.Total, item.CategoryID, now)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return helpers.QuoteDuplicateFailed(c, err)
+	}
+
+	// Build response
 	newQuote := models.Quote{
-		ID:             primitive.NewObjectID(),
+		ID:             newQuoteID,
 		CompanyID:      originalQuote.CompanyID,
 		Number:         quoteNumber,
 		ClientName:     originalQuote.ClientName,
@@ -768,7 +605,6 @@ func duplicateQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collect
 		ClientZipCode:  originalQuote.ClientZipCode,
 		Title:          originalQuote.Title + " (Copia)",
 		Description:    originalQuote.Description,
-		Items:          newItems,
 		Subtotal:       originalQuote.Subtotal,
 		Discount:       originalQuote.Discount,
 		DiscountType:   originalQuote.DiscountType,
@@ -781,27 +617,24 @@ func duplicateQuoteWithoutTransaction(c *fiber.Ctx, ctx context.Context, collect
 		UpdatedAt:      now,
 	}
 
-	_, err = collection.InsertOne(ctx, newQuote)
-	if err != nil {
-		return helpers.QuoteDuplicateFailed(c, err)
-	}
+	newQuote.Items, _ = getQuoteItems(ctx, newQuoteID)
 
 	return c.Status(201).JSON(newQuote)
 }
 
-// UpdateQuoteStatus atualiza o status de um orcamento
+// UpdateQuoteStatus updates the status of a quote
 func UpdateQuoteStatus(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
-	_, err = helpers.ValidateQuoteOwnership(c, objID)
+	_, err = helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
@@ -811,7 +644,6 @@ func UpdateQuoteStatus(c *fiber.Ctx) error {
 		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validar status
 	validStatuses := map[string]bool{
 		string(models.QuoteDraft):    true,
 		string(models.QuoteSent):     true,
@@ -827,48 +659,39 @@ func UpdateQuoteStatus(c *fiber.Ctx) error {
 		})
 	}
 
-	collection := database.GetCollection(quoteCollection)
-
-	update := bson.M{
-		"$set": bson.M{
-			"status":    models.QuoteStatus(req.Status),
-			"updatedAt": time.Now(),
-		},
-	}
-
-	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
+	now := time.Now()
+	_, err = database.Pool.Exec(ctx,
+		`UPDATE quotes SET status = $1, updated_at = $2 WHERE id = $3`,
+		req.Status, now, quoteID)
 	if err != nil {
 		return helpers.QuoteUpdateFailed(c, err)
 	}
 
-	var updatedQuote models.Quote
-	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&updatedQuote)
-	if err != nil {
-		return helpers.DatabaseError(c, "fetch_updated_quote", err)
-	}
+	// Fetch updated quote
+	updatedQuote, _ := helpers.ValidateQuoteOwnership(c, quoteID)
+	updatedQuote.Items, _ = getQuoteItems(ctx, quoteID)
 
 	return c.JSON(updatedQuote)
 }
 
-// GetQuoteComparison retorna comparativo orcado vs realizado
+// GetQuoteComparison returns comparison between quoted and executed amounts
 func GetQuoteComparison(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	id := c.Params("id")
-	objID, err := primitive.ObjectIDFromHex(id)
+	quoteID, err := uuid.Parse(id)
 	if err != nil {
 		return helpers.InvalidIDFormat(c, "id")
 	}
 
-	// Validate ownership e buscar orcamento
-	quote, err := helpers.ValidateQuoteOwnership(c, objID)
+	// Validate ownership
+	quote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
-	// Buscar transacoes por categoria
-	transCollection := database.GetCollection("transactions")
+	quote.Items, _ = getQuoteItems(ctx, quote.ID)
 
 	var comparisonItems []models.QuoteComparisonItem
 	var executedTotal float64
@@ -881,26 +704,15 @@ func GetQuoteComparison(c *fiber.Ctx) error {
 			Variance:    0,
 		}
 
-		// Se o item tem categoria, buscar transacoes dessa categoria
-		if !item.CategoryID.IsZero() {
-			compItem.CategoryID = item.CategoryID.Hex()
+		if item.CategoryID != nil {
+			compItem.CategoryID = item.CategoryID.String()
 
-			// Buscar transacoes da categoria no periodo do orcamento
-			filter := bson.M{
-				"companyId": quote.CompanyID,
-				"category":  item.CategoryID.Hex(),
-			}
-
-			cursor, err := transCollection.Find(ctx, filter)
-			if err == nil {
-				var transactions []models.Transaction
-				if err = cursor.All(ctx, &transactions); err == nil {
-					for _, t := range transactions {
-						compItem.Executed += t.Amount
-					}
-				}
-				cursor.Close(ctx)
-			}
+			// Fetch transactions for this category
+			var executed float64
+			database.QueryRow(ctx,
+				`SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE company_id = $1 AND category = $2`,
+				quote.CompanyID, item.CategoryID.String()).Scan(&executed)
+			compItem.Executed = executed
 		}
 
 		compItem.Variance = compItem.Quoted - compItem.Executed
@@ -915,7 +727,7 @@ func GetQuoteComparison(c *fiber.Ctx) error {
 	}
 
 	comparison := models.QuoteComparison{
-		QuoteID:         quote.ID.Hex(),
+		QuoteID:         quote.ID.String(),
 		QuotedTotal:     quote.Total,
 		ExecutedTotal:   executedTotal,
 		Variance:        variance,
