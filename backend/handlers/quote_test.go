@@ -825,8 +825,8 @@ func TestDuplicateQuote(t *testing.T) {
 					t.Errorf("Duplicated quote should have a new ID")
 				}
 
-				// Verify the title has "(Cópia)" suffix
-				expectedTitle := "Orcamento Original (Cópia)"
+				// Verify the title has "(Copia)" suffix
+				expectedTitle := "Orcamento Original (Copia)"
 				if duplicatedQuote.Title != expectedTitle {
 					t.Errorf("Expected title %s, got %s", expectedTitle, duplicatedQuote.Title)
 				}

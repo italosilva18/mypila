@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTransactions } from './useTransactions';
 import { api } from '../services/api';
-import { Status, Transaction } from '../types';
+import { Status, Transaction, PaginationInfo } from '../types';
 
 // Mock the api module
 vi.mock('../services/api', () => ({
@@ -51,6 +51,18 @@ describe('useTransactions', () => {
     },
   ];
 
+  const mockPagination: PaginationInfo = {
+    page: 1,
+    limit: 50,
+    total: 2,
+    totalPages: 1,
+  };
+
+  const mockPaginatedResponse = {
+    data: mockTransactions,
+    pagination: mockPagination,
+  };
+
   const mockStats = {
     paid: 1000,
     open: 500,
@@ -60,7 +72,7 @@ describe('useTransactions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Setup default mock implementations
-    vi.mocked(api.getTransactions).mockResolvedValue(mockTransactions);
+    vi.mocked(api.getTransactions).mockResolvedValue(mockPaginatedResponse);
     vi.mocked(api.getStats).mockResolvedValue(mockStats);
   });
 
@@ -79,7 +91,7 @@ describe('useTransactions', () => {
         expect(result.current.loading).toBe(false);
       });
 
-      expect(api.getTransactions).toHaveBeenCalledWith(mockCompanyId);
+      expect(api.getTransactions).toHaveBeenCalledWith(mockCompanyId, 1, 50);
       expect(api.getStats).toHaveBeenCalledWith(mockCompanyId);
       expect(result.current.transactions).toEqual(mockTransactions);
       expect(result.current.stats).toEqual(mockStats);
@@ -124,6 +136,10 @@ describe('useTransactions', () => {
           status: Status.PAID,
         },
       ];
+      const newPaginatedResponse = {
+        data: newTransactions,
+        pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
+      };
 
       const { result, rerender } = renderHook(
         ({ companyId }) => useTransactions(companyId),
@@ -135,11 +151,11 @@ describe('useTransactions', () => {
       });
 
       // Change companyId
-      vi.mocked(api.getTransactions).mockResolvedValue(newTransactions);
+      vi.mocked(api.getTransactions).mockResolvedValue(newPaginatedResponse);
       rerender({ companyId: newCompanyId });
 
       await waitFor(() => {
-        expect(api.getTransactions).toHaveBeenCalledWith(newCompanyId);
+        expect(api.getTransactions).toHaveBeenCalledWith(newCompanyId, 1, 50);
       });
     });
   });
@@ -458,7 +474,7 @@ describe('useTransactions', () => {
         await result.current.refreshData();
       });
 
-      expect(api.getTransactions).toHaveBeenCalledWith(mockCompanyId);
+      expect(api.getTransactions).toHaveBeenCalledWith(mockCompanyId, 1, 50);
       expect(api.getStats).toHaveBeenCalledWith(mockCompanyId);
     });
 
@@ -554,7 +570,7 @@ describe('useTransactions', () => {
     it('deve limpar erro ao fazer nova requisicao', async () => {
       vi.mocked(api.getTransactions)
         .mockRejectedValueOnce(new Error('Error'))
-        .mockResolvedValueOnce(mockTransactions);
+        .mockResolvedValueOnce(mockPaginatedResponse);
 
       const { result, rerender } = renderHook(
         ({ companyId }) => useTransactions(companyId),

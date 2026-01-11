@@ -219,13 +219,16 @@ func TestRegister(t *testing.T) {
 			body, _ := io.ReadAll(resp.Body)
 
 			if tt.expectToken {
-				var authResp models.AuthResponse
+				var authResp models.AuthResponseWithTokens
 				err := json.Unmarshal(body, &authResp)
 				if err != nil {
 					t.Errorf("Failed to unmarshal response: %v", err)
 				}
-				if authResp.Token == "" {
-					t.Errorf("Expected token in response, got empty string")
+				if authResp.AccessToken == "" {
+					t.Errorf("Expected access token in response, got empty string")
+				}
+				if authResp.RefreshToken == "" {
+					t.Errorf("Expected refresh token in response, got empty string")
 				}
 				if authResp.User.Email != tt.requestBody.Email {
 					t.Errorf("Expected user email %s, got %s", tt.requestBody.Email, authResp.User.Email)
@@ -360,24 +363,27 @@ func TestLogin(t *testing.T) {
 			body, _ := io.ReadAll(resp.Body)
 
 			if tt.expectToken {
-				var authResp models.AuthResponse
+				var authResp models.AuthResponseWithTokens
 				err := json.Unmarshal(body, &authResp)
 				if err != nil {
 					t.Errorf("Failed to unmarshal response: %v", err)
 				}
-				if authResp.Token == "" {
-					t.Errorf("Expected token in response, got empty string")
+				if authResp.AccessToken == "" {
+					t.Errorf("Expected access token in response, got empty string")
+				}
+				if authResp.RefreshToken == "" {
+					t.Errorf("Expected refresh token in response, got empty string")
 				}
 				if authResp.User.Email != tt.requestBody.Email {
 					t.Errorf("Expected user email %s, got %s", tt.requestBody.Email, authResp.User.Email)
 				}
 
-				// Verify token is valid
-				token, err := jwt.Parse(authResp.Token, func(token *jwt.Token) (interface{}, error) {
+				// Verify access token is valid
+				token, err := jwt.Parse(authResp.AccessToken, func(token *jwt.Token) (interface{}, error) {
 					return []byte(config.JWTSecret), nil
 				})
 				if err != nil || !token.Valid {
-					t.Errorf("Generated token is invalid: %v", err)
+					t.Errorf("Generated access token is invalid: %v", err)
 				}
 			}
 
@@ -498,7 +504,7 @@ func TestGenerateToken(t *testing.T) {
 		Email: "test@example.com",
 	}
 
-	token, err := generateToken(user)
+	token, err := generateAccessToken(user)
 	if err != nil {
 		t.Fatalf("Failed to generate token: %v", err)
 	}
@@ -649,6 +655,6 @@ func BenchmarkGenerateToken(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		generateToken(user)
+		generateAccessToken(user)
 	}
 }

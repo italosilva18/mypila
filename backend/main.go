@@ -18,6 +18,7 @@ import (
 	"m2m-backend/config"
 	"m2m-backend/database"
 	"m2m-backend/handlers"
+	"m2m-backend/helpers"
 	"m2m-backend/middleware"
 	"m2m-backend/migrations"
 )
@@ -122,9 +123,7 @@ func main() {
 			return c.IP()
 		},
 		LimitReached: func(c *fiber.Ctx) error {
-			return c.Status(429).JSON(fiber.Map{
-				"error": "Muitas requisições. Tente novamente em alguns minutos.",
-			})
+			return helpers.RateLimited(c, "Muitas requisicoes. Tente novamente em alguns minutos.", nil)
 		},
 		SkipFailedRequests:     false,
 		SkipSuccessfulRequests: false,
@@ -141,21 +140,13 @@ func main() {
 
 	// Auth routes with stricter rate limiting (20 requests per minute)
 	auth := api.Group("/auth")
-	authLimiter := limiter.New(limiter.Config{
-		Max:        20,
-		Expiration: 1 * time.Minute,
-		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP()
-		},
-		LimitReached: func(c *fiber.Ctx) error {
-			return c.Status(429).JSON(fiber.Map{
-				"error": "Muitas tentativas de autenticação. Tente novamente em alguns minutos.",
-			})
-		},
-	})
+	authLimiter := middleware.AuthLimiter()
 	auth.Post("/register", authLimiter, handlers.Register)
 	auth.Post("/login", authLimiter, handlers.Login)
+	auth.Post("/refresh", authLimiter, handlers.RefreshToken)
+	auth.Post("/logout", handlers.Logout)
 	auth.Get("/me", middleware.Protected(), handlers.GetMe)
+	auth.Post("/logout-all", middleware.Protected(), handlers.LogoutAll)
 
 	// Protected routes
 	api.Use(middleware.Protected())
@@ -163,17 +154,17 @@ func main() {
 	// Company routes
 	companies := api.Group("/companies")
 	companies.Get("/", handlers.GetCompanies)
-	companies.Post("/", handlers.CreateCompany)
+	companies.Post("/", middleware.ModerateLimiter(), handlers.CreateCompany)
 	companies.Put("/:id", handlers.UpdateCompany)
-	companies.Delete("/:id", handlers.DeleteCompany)
+	companies.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteCompany)
 
 	// Transactions routes
 	transactions := api.Group("/transactions")
 	transactions.Get("/", handlers.GetAllTransactions)
 	transactions.Get("/:id", handlers.GetTransaction)
-	transactions.Post("/", handlers.CreateTransaction)
+	transactions.Post("/", middleware.ModerateLimiter(), handlers.CreateTransaction)
 	transactions.Put("/:id", handlers.UpdateTransaction)
-	transactions.Delete("/:id", handlers.DeleteTransaction)
+	transactions.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteTransaction)
 	transactions.Patch("/:id/toggle-status", handlers.ToggleStatus)
 
 	// Stats route
@@ -182,36 +173,36 @@ func main() {
 	// Category routes
 	categories := api.Group("/categories")
 	categories.Get("/", handlers.GetCategories)
-	categories.Post("/", handlers.CreateCategory)
+	categories.Post("/", middleware.ModerateLimiter(), handlers.CreateCategory)
 	categories.Put("/:id", handlers.UpdateCategory)
-	categories.Delete("/:id", handlers.DeleteCategory)
+	categories.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteCategory)
 
 	// Recurring routes
 	recurring := api.Group("/recurring")
 	recurring.Get("/", handlers.GetRecurring)
-	recurring.Post("/", handlers.CreateRecurring)
-	recurring.Delete("/:id", handlers.DeleteRecurring)
-	recurring.Post("/process", handlers.ProcessRecurring)
+	recurring.Post("/", middleware.ModerateLimiter(), handlers.CreateRecurring)
+	recurring.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteRecurring)
+	recurring.Post("/process", middleware.HeavyOperationLimiter(), handlers.ProcessRecurring)
 
 	// Quote routes
 	quotes := api.Group("/quotes")
 	quotes.Get("/", handlers.GetQuotes)
 	quotes.Get("/:id", handlers.GetQuote)
-	quotes.Post("/", handlers.CreateQuote)
+	quotes.Post("/", middleware.ModerateLimiter(), handlers.CreateQuote)
 	quotes.Put("/:id", handlers.UpdateQuote)
-	quotes.Delete("/:id", handlers.DeleteQuote)
-	quotes.Post("/:id/duplicate", handlers.DuplicateQuote)
+	quotes.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteQuote)
+	quotes.Post("/:id/duplicate", middleware.ModerateLimiter(), handlers.DuplicateQuote)
 	quotes.Patch("/:id/status", handlers.UpdateQuoteStatus)
-	quotes.Get("/:id/pdf", handlers.GenerateQuotePDF)
+	quotes.Get("/:id/pdf", middleware.HeavyOperationLimiter(), handlers.GenerateQuotePDF)
 	quotes.Get("/:id/comparison", handlers.GetQuoteComparison)
 
 	// Quote Template routes
 	quoteTemplates := api.Group("/quote-templates")
 	quoteTemplates.Get("/", handlers.GetQuoteTemplates)
 	quoteTemplates.Get("/:id", handlers.GetQuoteTemplate)
-	quoteTemplates.Post("/", handlers.CreateQuoteTemplate)
+	quoteTemplates.Post("/", middleware.ModerateLimiter(), handlers.CreateQuoteTemplate)
 	quoteTemplates.Put("/:id", handlers.UpdateQuoteTemplate)
-	quoteTemplates.Delete("/:id", handlers.DeleteQuoteTemplate)
+	quoteTemplates.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteQuoteTemplate)
 
 	// Seed route (for initial data) - ONLY in explicit development mode
 	if os.Getenv("GO_ENV") == "development" {

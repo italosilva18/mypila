@@ -48,7 +48,9 @@ export interface User {
 }
 
 export interface AuthResponse {
-  token: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
   user: User;
 }
 
@@ -184,4 +186,17 @@ export interface QuoteComparison {
   variance: number;
   variancePercent: number;
   items: QuoteComparisonItem[];
+}
+
+// ===== Pagination Types =====
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: PaginationInfo;
 }

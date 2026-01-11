@@ -17,14 +17,14 @@ import (
 func CreateRecurring(c *fiber.Ctx) error {
 	var req models.CreateRecurringRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Description, "description"),
 		helpers.ValidateMaxLength(req.Description, "description", 200),
-		helpers.ValidatePositiveNumber(req.Amount, "amount"),
+		helpers.ValidateAmount(req.Amount, "amount"),
 		helpers.ValidateDayOfMonth(req.DayOfMonth),
 		helpers.ValidateRequired(req.Category, "category"),
 		helpers.ValidateNoScriptTags(req.Description, "description"),
@@ -46,7 +46,7 @@ func CreateRecurring(c *fiber.Ctx) error {
 	// Convert companyId string to ObjectID
 	companyObjID, err := primitive.ObjectIDFromHex(req.CompanyID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -70,7 +70,7 @@ func CreateRecurring(c *fiber.Ctx) error {
 	defer cancel()
 	_, err = collection.InsertOne(ctx, rule)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar regra recorrente"})
+		return helpers.RecurringCreateFailed(c, err)
 	}
 
 	return c.JSON(rule)
@@ -80,13 +80,13 @@ func CreateRecurring(c *fiber.Ctx) error {
 func GetRecurring(c *fiber.Ctx) error {
 	companyID := c.Query("companyId")
 	if companyID == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Company ID is required"})
+		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
 	// Convert companyId string to ObjectID
 	companyObjID, err := primitive.ObjectIDFromHex(companyID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -102,13 +102,13 @@ func GetRecurring(c *fiber.Ctx) error {
 
 	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch rules"})
+		return helpers.RecurringFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var rules []models.RecurringTransaction
 	if err = cursor.All(ctx, &rules); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse rules"})
+		return helpers.DatabaseError(c, "decode_recurring_rules", err)
 	}
 
 	if rules == nil {
@@ -123,7 +123,7 @@ func DeleteRecurring(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID format"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -138,7 +138,7 @@ func DeleteRecurring(c *fiber.Ctx) error {
 	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
 
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete"})
+		return helpers.RecurringDeleteFailed(c, err)
 	}
 	return c.SendStatus(204)
 }
@@ -149,16 +149,22 @@ func ProcessRecurring(c *fiber.Ctx) error {
 	month := c.Query("month")
 	year := c.Query("year") // e.g. "2024" or 2024 (int)
 
-	if companyID == "" || month == "" || year == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Missing params"})
+	if companyID == "" {
+		return helpers.MissingRequiredParam(c, "companyId")
+	}
+	if month == "" {
+		return helpers.MissingRequiredParam(c, "month")
+	}
+	if year == "" {
+		return helpers.MissingRequiredParam(c, "year")
 	}
 
-	// Validar mes
+	// Validate month
 	if err := helpers.ValidateMonth(month); err != nil {
 		return helpers.SendValidationError(c, err.Field, err.Message)
 	}
 
-	// Validar ano
+	// Validate year
 	var yearInt int
 	fmt.Sscanf(year, "%d", &yearInt)
 	if err := helpers.ValidateYear(yearInt); err != nil {
@@ -168,7 +174,7 @@ func ProcessRecurring(c *fiber.Ctx) error {
 	// Convert companyID string to ObjectID
 	companyObjID, err := primitive.ObjectIDFromHex(companyID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -186,13 +192,13 @@ func ProcessRecurring(c *fiber.Ctx) error {
 	// Get all rules
 	cursor, err := rulesColl.Find(ctx, bson.M{"companyId": companyObjID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch recurring rules"})
+		return helpers.RecurringFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var rules []models.RecurringTransaction
 	if err = cursor.All(ctx, &rules); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse recurring rules"})
+		return helpers.DatabaseError(c, "decode_recurring_rules", err)
 	}
 
 	createdCount := 0
@@ -231,7 +237,7 @@ func ProcessRecurring(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Processed",
+		"message": "Processamento concluido",
 		"created": createdCount,
 	})
 }

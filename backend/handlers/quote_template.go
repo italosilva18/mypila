@@ -15,19 +15,19 @@ import (
 
 const quoteTemplateCollection = "quote_templates"
 
-// GetQuoteTemplates lista todos os templates de orçamento de uma empresa
+// GetQuoteTemplates lista todos os templates de orcamento de uma empresa
 func GetQuoteTemplates(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	companyId := c.Query("companyId")
 	if companyId == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Company ID is required"})
+		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
 	companyObjID, err := primitive.ObjectIDFromHex(companyId)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -40,13 +40,13 @@ func GetQuoteTemplates(c *fiber.Ctx) error {
 
 	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch templates"})
+		return helpers.QuoteTemplateFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var templates []models.QuoteTemplate
 	if err = cursor.All(ctx, &templates); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse templates"})
+		return helpers.DatabaseError(c, "decode_templates", err)
 	}
 
 	if templates == nil {
@@ -61,7 +61,7 @@ func GetQuoteTemplate(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -73,19 +73,19 @@ func GetQuoteTemplate(c *fiber.Ctx) error {
 	return c.JSON(template)
 }
 
-// CreateQuoteTemplate cria um novo template de orçamento
+// CreateQuoteTemplate cria um novo template de orcamento
 func CreateQuoteTemplate(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	companyId := c.Query("companyId")
 	if companyId == "" {
-		return helpers.SendValidationError(c, "companyId", "ID da empresa é obrigatório")
+		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
 	companyObjID, err := primitive.ObjectIDFromHex(companyId)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -96,10 +96,10 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 
 	var req models.CreateQuoteTemplateRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 100),
@@ -125,7 +125,7 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 
 	collection := database.GetCollection(quoteTemplateCollection)
 
-	// Se este template deve ser o padrão, remover flag dos outros
+	// Se este template deve ser o padrao, remover flag dos outros
 	if req.IsDefault {
 		_, err = collection.UpdateMany(ctx, bson.M{
 			"companyId": companyObjID,
@@ -134,7 +134,7 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 			"$set": bson.M{"isDefault": false},
 		})
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar templates existentes"})
+			return helpers.DatabaseError(c, "update_existing_templates", err)
 		}
 	}
 
@@ -158,7 +158,7 @@ func CreateQuoteTemplate(c *fiber.Ctx) error {
 
 	_, err = collection.InsertOne(ctx, template)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar template"})
+		return helpers.QuoteTemplateCreateFailed(c, err)
 	}
 
 	return c.Status(201).JSON(template)
@@ -172,7 +172,7 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -183,10 +183,10 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 
 	var req models.UpdateQuoteTemplateRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 100),
@@ -203,7 +203,7 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 
 	collection := database.GetCollection(quoteTemplateCollection)
 
-	// Se este template deve ser o padrão, remover flag dos outros
+	// Se este template deve ser o padrao, remover flag dos outros
 	if req.IsDefault && !existingTemplate.IsDefault {
 		_, err = collection.UpdateMany(ctx, bson.M{
 			"companyId": existingTemplate.CompanyID,
@@ -213,7 +213,7 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 			"$set": bson.M{"isDefault": false},
 		})
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar templates existentes"})
+			return helpers.DatabaseError(c, "update_existing_templates", err)
 		}
 	}
 
@@ -231,13 +231,13 @@ func UpdateQuoteTemplate(c *fiber.Ctx) error {
 
 	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar template"})
+		return helpers.QuoteTemplateUpdateFailed(c, err)
 	}
 
 	var updatedTemplate models.QuoteTemplate
 	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&updatedTemplate)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao buscar template atualizado"})
+		return helpers.DatabaseError(c, "fetch_updated_template", err)
 	}
 
 	return c.JSON(updatedTemplate)
@@ -251,7 +251,7 @@ func DeleteQuoteTemplate(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -264,7 +264,7 @@ func DeleteQuoteTemplate(c *fiber.Ctx) error {
 
 	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete template"})
+		return helpers.QuoteTemplateDeleteFailed(c, err)
 	}
 
 	return c.SendStatus(204)

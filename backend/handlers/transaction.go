@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"math"
 	"strconv"
 	"time"
@@ -35,7 +34,7 @@ func GetAllTransactions(c *fiber.Ctx) error {
 	if companyID := c.Query("companyId"); companyID != "" {
 		objID, err := primitive.ObjectIDFromHex(companyID)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+			return helpers.InvalidIDFormat(c, "companyId")
 		}
 
 		// Validate ownership before allowing query
@@ -56,13 +55,13 @@ func GetAllTransactions(c *fiber.Ctx) error {
 		companyCollection := database.GetCollection("companies")
 		companyCursor, err := companyCollection.Find(ctx, bson.M{"userId": userID})
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch user companies"})
+			return helpers.CompanyFetchFailed(c, err)
 		}
 		defer companyCursor.Close(ctx)
 
 		var companies []models.Company
 		if err := companyCursor.All(ctx, &companies); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to decode companies"})
+			return helpers.DatabaseError(c, "decode_companies", err)
 		}
 
 		// Extract company IDs
@@ -78,7 +77,7 @@ func GetAllTransactions(c *fiber.Ctx) error {
 	// Count total documents matching the query
 	total, err := collection.CountDocuments(ctx, query)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to count transactions"})
+		return helpers.TransactionFetchFailed(c, err)
 	}
 
 	// Calculate pagination
@@ -94,13 +93,13 @@ func GetAllTransactions(c *fiber.Ctx) error {
 	// Execute query
 	cursor, err := collection.Find(ctx, query, findOptions)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch transactions"})
+		return helpers.TransactionFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var transactions []models.Transaction
 	if err := cursor.All(ctx, &transactions); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to decode transactions"})
+		return helpers.DatabaseError(c, "decode_transactions", err)
 	}
 
 	if transactions == nil {
@@ -147,7 +146,7 @@ func GetTransaction(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID format"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -166,12 +165,12 @@ func CreateTransaction(c *fiber.Ctx) error {
 
 	var req models.CreateTransactionRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
-		helpers.ValidatePositiveNumber(req.Amount, "amount"),
+		helpers.ValidateAmount(req.Amount, "amount"),
 		helpers.ValidateMaxLength(req.Description, "description", 200),
 		helpers.ValidateRequired(req.Category, "category"),
 		helpers.ValidateMonth(req.Month),
@@ -195,7 +194,7 @@ func CreateTransaction(c *fiber.Ctx) error {
 
 	companyID, err := primitive.ObjectIDFromHex(req.CompanyID)
 	if err != nil {
-		return helpers.SendValidationError(c, "companyId", "Formato de ID da empresa inválido")
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership before creating transaction
@@ -219,8 +218,7 @@ func CreateTransaction(c *fiber.Ctx) error {
 
 	_, err = collection.InsertOne(ctx, transaction)
 	if err != nil {
-		log.Printf("[ERROR] Failed to create transaction: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar transação", "details": err.Error()})
+		return helpers.TransactionCreateFailed(c, err)
 	}
 
 	return c.Status(201).JSON(transaction)
@@ -234,7 +232,7 @@ func UpdateTransaction(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -245,12 +243,12 @@ func UpdateTransaction(c *fiber.Ctx) error {
 
 	var req models.UpdateTransactionRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
-		helpers.ValidatePositiveNumber(req.Amount, "amount"),
+		helpers.ValidateAmount(req.Amount, "amount"),
 		helpers.ValidateMaxLength(req.Description, "description", 200),
 		helpers.ValidateRequired(req.Category, "category"),
 		helpers.ValidateMonth(req.Month),
@@ -287,11 +285,11 @@ func UpdateTransaction(c *fiber.Ctx) error {
 
 	result, err := collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar transação"})
+		return helpers.TransactionUpdateFailed(c, err)
 	}
 
 	if result.MatchedCount == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Transação não encontrada"})
+		return helpers.TransactionNotFound(c)
 	}
 
 	// Fetch updated transaction
@@ -309,7 +307,7 @@ func DeleteTransaction(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID format"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -322,14 +320,14 @@ func DeleteTransaction(c *fiber.Ctx) error {
 
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": objID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete transaction"})
+		return helpers.TransactionDeleteFailed(c, err)
 	}
 
 	if result.DeletedCount == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Transaction not found"})
+		return helpers.TransactionNotFound(c)
 	}
 
-	return c.JSON(fiber.Map{"message": "Transaction deleted successfully"})
+	return c.JSON(fiber.Map{"message": "Transacao excluida com sucesso"})
 }
 
 // GetStats returns financial statistics (ownership validated)
@@ -343,7 +341,7 @@ func GetStats(c *fiber.Ctx) error {
 	if companyID := c.Query("companyId"); companyID != "" {
 		objID, err := primitive.ObjectIDFromHex(companyID)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+			return helpers.InvalidIDFormat(c, "companyId")
 		}
 
 		// Validate ownership
@@ -364,13 +362,13 @@ func GetStats(c *fiber.Ctx) error {
 		companyCollection := database.GetCollection("companies")
 		companyCursor, err := companyCollection.Find(ctx, bson.M{"userId": userID})
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch user companies"})
+			return helpers.CompanyFetchFailed(c, err)
 		}
 		defer companyCursor.Close(ctx)
 
 		var companies []models.Company
 		if err := companyCursor.All(ctx, &companies); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to decode companies"})
+			return helpers.DatabaseError(c, "decode_companies", err)
 		}
 
 		// Extract company IDs
@@ -384,13 +382,13 @@ func GetStats(c *fiber.Ctx) error {
 
 	cursor, err := collection.Find(ctx, query)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch transactions"})
+		return helpers.TransactionFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var transactions []models.Transaction
 	if err := cursor.All(ctx, &transactions); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to decode transactions"})
+		return helpers.DatabaseError(c, "decode_transactions", err)
 	}
 
 	stats := models.Stats{Paid: 0, Open: 0, Total: 0}
@@ -414,7 +412,7 @@ func ToggleStatus(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID format"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -434,7 +432,7 @@ func ToggleStatus(c *fiber.Ctx) error {
 	// Update
 	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, bson.M{"$set": bson.M{"status": newStatus}})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to update status"})
+		return helpers.TransactionUpdateFailed(c, err)
 	}
 
 	transaction.Status = newStatus
@@ -451,7 +449,7 @@ func SeedTransactions(c *fiber.Ctx) error {
 	// Check if already has data
 	count, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to count documents"})
+		return helpers.DatabaseError(c, "count_transactions", err)
 	}
 
 	if count > 0 {
@@ -478,7 +476,7 @@ func SeedTransactions(c *fiber.Ctx) error {
 			CreatedAt: time.Now(),
 		}
 		if _, err := companyCollection.InsertOne(ctx, m2mCompany); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to create default company"})
+			return helpers.CompanyCreateFailed(c, err)
 		}
 	}
 
@@ -486,7 +484,7 @@ func SeedTransactions(c *fiber.Ctx) error {
 	initialData := []interface{}{
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Janeiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Fevereiro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Março", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
+		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Marco", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Abril", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Maio", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Junho", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
@@ -496,7 +494,7 @@ func SeedTransactions(c *fiber.Ctx) error {
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Outubro", Year: 2024, Amount: 3500, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Novembro", Year: 2024, Amount: 5000, Category: models.CategorySalary, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Dezembro", Year: 2024, Amount: 5000, Category: models.CategorySalary, Status: models.StatusOpen},
-		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Acumulado", Year: 2024, Amount: 3765.34, Category: models.CategoryVacation, Status: models.StatusOpen, Description: "Baseado no salário da carteira R$ 1.412"},
+		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Acumulado", Year: 2024, Amount: 3765.34, Category: models.CategoryVacation, Status: models.StatusOpen, Description: "Baseado no salario da carteira R$ 1.412"},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Agosto", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Setembro", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
 		models.Transaction{ID: primitive.NewObjectID(), CompanyID: m2mCompany.ID, Month: "Outubro", Year: 2024, Amount: 1000, Category: models.CategoryAICost, Status: models.StatusPaid},
@@ -508,7 +506,7 @@ func SeedTransactions(c *fiber.Ctx) error {
 
 	_, err = collection.InsertMany(ctx, initialData)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to seed data"})
+		return helpers.DatabaseError(c, "seed_transactions", err)
 	}
 
 	return c.Status(201).JSON(fiber.Map{"message": "Data seeded successfully", "count": len(initialData)})

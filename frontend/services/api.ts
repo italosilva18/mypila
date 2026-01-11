@@ -1,57 +1,151 @@
-import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus } from '../types';
+import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus, PaginationInfo } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081/api';
 
-class ApiService {
-  private token: string | null = localStorage.getItem('token');
+// Default timeout in milliseconds (30 seconds)
+const DEFAULT_TIMEOUT = 30000;
 
-  setToken(token: string | null) {
-    this.token = token;
-    if (token) {
-      localStorage.setItem('token', token);
+// Timeout configuration for different operation types
+const TIMEOUT_CONFIG = {
+  default: DEFAULT_TIMEOUT,
+  upload: 120000,    // 2 minutes for uploads
+  download: 120000,  // 2 minutes for downloads
+  auth: 15000,       // 15 seconds for auth operations
+};
+
+class ApiService {
+  private accessToken: string | null = localStorage.getItem('accessToken');
+  private refreshToken: string | null = localStorage.getItem('refreshToken');
+  private isRefreshing = false;
+  private refreshPromise: Promise<boolean> | null = null;
+  private timeout: number = DEFAULT_TIMEOUT;
+
+  setRequestTimeout(ms: number) {
+    this.timeout = ms;
+  }
+
+  getRequestTimeout(): number {
+    return this.timeout;
+  }
+
+  setTokens(accessToken: string | null, refreshToken: string | null) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    if (accessToken) {
+      localStorage.setItem('accessToken', accessToken);
     } else {
-      localStorage.removeItem('token');
+      localStorage.removeItem('accessToken');
+    }
+    if (refreshToken) {
+      localStorage.setItem('refreshToken', refreshToken);
+    } else {
+      localStorage.removeItem('refreshToken');
     }
   }
 
   getToken(): string | null {
-    return this.token;
+    return this.accessToken;
   }
 
-  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  private async tryRefreshToken(): Promise<boolean> {
+    if (!this.refreshToken) {
+      return false;
+    }
+
+    // If already refreshing, wait for the existing promise
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      // Setup timeout with AbortController for token refresh
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_CONFIG.auth);
+
+      try {
+        const response = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: this.refreshToken }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          this.setTokens(null, null);
+          return false;
+        }
+
+        const data = await response.json();
+        this.setTokens(data.accessToken, data.refreshToken);
+        return true;
+      } catch {
+        this.setTokens(null, null);
+        return false;
+      } finally {
+        clearTimeout(timeoutId);
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options?: RequestInit & { timeout?: number },
+    retryOnUnauthorized = true
+  ): Promise<T> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
     // Ensure we don't have double slashes if endpoint starts with /
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
-    // Fix: Only append / if not present in API_URL and not in endpoint - actually simpler logic:
-    // API_URL usually has no trailing slash, so we append endpoint.
+    // Setup timeout with AbortController
+    const controller = new AbortController();
+    const timeoutMs = options?.timeout ?? this.timeout;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(`${API_URL}${cleanEndpoint}`, {
-      headers: { ...headers, ...options?.headers },
-      ...options,
-    });
+    try {
+      const response = await fetch(`${API_URL}${cleanEndpoint}`, {
+        headers: { ...headers, ...options?.headers },
+        ...options,
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      // Handle 401 Unauthorized - token expired or invalid
-      if (response.status === 401) {
-        this.setToken(null);
-        // Redirect to login page
-        window.location.href = '/login';
-        throw new Error('Invalid or expired token');
+      if (!response.ok) {
+        // Handle 401 Unauthorized - try to refresh token
+        if (response.status === 401 && retryOnUnauthorized) {
+          const refreshed = await this.tryRefreshToken();
+          if (refreshed) {
+            // Retry the request with new token
+            return this.request<T>(endpoint, options, false);
+          }
+          // Refresh failed, redirect to login
+          window.location.href = '/login';
+          throw new Error('Session expired');
+        }
+
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(error.error?.message || error.error || `HTTP error! status: ${response.status}`);
       }
 
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
+      return response.json();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response.json();
   }
 
   // Auth
@@ -59,8 +153,9 @@ class ApiService {
     const response = await this.request<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
+      timeout: TIMEOUT_CONFIG.auth,
     });
-    this.setToken(response.token);
+    this.setTokens(response.accessToken, response.refreshToken);
     return response;
   }
 
@@ -68,8 +163,9 @@ class ApiService {
     const response = await this.request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
+      timeout: TIMEOUT_CONFIG.auth,
     });
-    this.setToken(response.token);
+    this.setTokens(response.accessToken, response.refreshToken);
     return response;
   }
 
@@ -102,8 +198,23 @@ class ApiService {
     });
   }
 
-  logout() {
-    this.setToken(null);
+  async logout(): Promise<void> {
+    // Call backend to invalidate refresh token
+    if (this.refreshToken) {
+      try {
+        await fetch(`${API_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.accessToken}`,
+          },
+          body: JSON.stringify({ refreshToken: this.refreshToken }),
+        });
+      } catch {
+        // Ignore errors - we're logging out anyway
+      }
+    }
+    this.setTokens(null, null);
   }
 
   // Companies
@@ -132,10 +243,19 @@ class ApiService {
   }
 
   // Transactions
-  async getTransactions(companyId: string): Promise<Transaction[]> {
+  async getTransactions(companyId: string, page: number = 1, limit: number = 50): Promise<{ data: Transaction[]; pagination: PaginationInfo }> {
     // Backend returns paginated response {data: Transaction[], pagination: {...}}
-    const response = await this.request<{ data: Transaction[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/transactions?companyId=${companyId}`);
-    return response.data || [];
+    const response = await this.request<{ data: Transaction[]; pagination: PaginationInfo }>(`/transactions?companyId=${companyId}&page=${page}&limit=${limit}`);
+    return {
+      data: response.data || [],
+      pagination: response.pagination || { page: 1, limit, total: 0, totalPages: 0 }
+    };
+  }
+
+  // Helper for backwards compatibility - returns just the data array
+  async getAllTransactions(companyId: string): Promise<Transaction[]> {
+    const response = await this.getTransactions(companyId, 1, 1000);
+    return response.data;
   }
 
   async getTransaction(id: string): Promise<Transaction> {
@@ -254,15 +374,31 @@ class ApiService {
 
   async downloadQuotePDF(id: string): Promise<Blob> {
     const headers: HeadersInit = {};
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(`${API_URL}/quotes/${id}/pdf`, { headers });
-    if (!response.ok) {
-      throw new Error('Falha ao gerar PDF');
+    // Setup timeout with AbortController for download
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_CONFIG.download);
+
+    try {
+      const response = await fetch(`${API_URL}/quotes/${id}/pdf`, {
+        headers,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao gerar PDF');
+      }
+      return response.blob();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Download timeout after ${TIMEOUT_CONFIG.download}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return response.blob();
   }
 
   async getQuoteComparison(id: string): Promise<QuoteComparison> {

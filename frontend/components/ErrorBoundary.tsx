@@ -4,6 +4,7 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 interface State {
@@ -36,8 +37,8 @@ export class ErrorBoundary extends Component<Props, State> {
     // Log error details for debugging
     console.error('ErrorBoundary caught an error:', error, errorInfo);
 
-    // You can also log to an error reporting service here
-    // Example: logErrorToService(error, errorInfo);
+    // Call optional error callback (useful for error reporting services)
+    this.props.onError?.(error, errorInfo);
 
     this.setState({
       error,
@@ -128,4 +129,27 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+/**
+ * Higher-order component to wrap any component with an ErrorBoundary
+ * Usage: const SafeComponent = withErrorBoundary(MyComponent);
+ */
+export function withErrorBoundary<P extends object>(
+  WrappedComponent: React.ComponentType<P>,
+  fallback?: ReactNode,
+  onError?: (error: Error, errorInfo: ErrorInfo) => void
+) {
+  const displayName = WrappedComponent.displayName || WrappedComponent.name || 'Component';
+
+  function WithErrorBoundary(props: P) {
+    return (
+      <ErrorBoundary fallback={fallback} onError={onError}>
+        <WrappedComponent {...props} />
+      </ErrorBoundary>
+    );
+  }
+
+  WithErrorBoundary.displayName = `withErrorBoundary(${displayName})`;
+  return WithErrorBoundary;
 }

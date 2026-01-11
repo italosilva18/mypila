@@ -41,7 +41,7 @@ func GetCompanies(c *fiber.Ctx) error {
 	// Call service layer
 	companies, err := getCompanyService().GetCompaniesByUserID(userID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch companies"})
+		return helpers.CompanyFetchFailed(c, err)
 	}
 
 	return c.JSON(companies)
@@ -58,7 +58,7 @@ func CreateCompany(c *fiber.Ctx) error {
 	// Parse request body
 	var req models.CreateCompanyRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
 	// Call service layer
@@ -67,7 +67,7 @@ func CreateCompany(c *fiber.Ctx) error {
 		if err == services.ErrInvalidInput && validationErrors != nil {
 			return helpers.SendValidationErrors(c, validationErrors)
 		}
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar empresa"})
+		return helpers.CompanyCreateFailed(c, err)
 	}
 
 	return c.Status(201).JSON(company)
@@ -85,13 +85,13 @@ func UpdateCompany(c *fiber.Ctx) error {
 	id := c.Params("id")
 	companyID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Parse request body
 	var req models.CreateCompanyRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
 	// Call service layer
@@ -101,15 +101,14 @@ func UpdateCompany(c *fiber.Ctx) error {
 			return helpers.SendValidationErrors(c, validationErrors)
 		}
 		if err == services.ErrCompanyNotFound {
-			return c.Status(404).JSON(fiber.Map{"error": "Company not found"})
+			return helpers.CompanyNotFound(c)
 		}
 		if err == services.ErrUnauthorized {
-			return c.Status(403).JSON(fiber.Map{
-				"error":   "Forbidden: you do not have permission to access this company",
-				"details": "This company belongs to another user",
+			return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para acessar esta empresa", helpers.ErrorDetails{
+				"reason": "Esta empresa pertence a outro usuario",
 			})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar empresa"})
+		return helpers.CompanyUpdateFailed(c, err)
 	}
 
 	return c.JSON(company)
@@ -127,23 +126,22 @@ func DeleteCompany(c *fiber.Ctx) error {
 	id := c.Params("id")
 	companyID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Call service layer
 	err = getCompanyService().DeleteCompany(companyID, userID)
 	if err != nil {
 		if err == services.ErrCompanyNotFound {
-			return c.Status(404).JSON(fiber.Map{"error": "Company not found"})
+			return helpers.CompanyNotFound(c)
 		}
 		if err == services.ErrUnauthorized {
-			return c.Status(403).JSON(fiber.Map{
-				"error":   "Forbidden: you do not have permission to delete this company",
-				"details": "This company belongs to another user",
+			return helpers.Forbidden(c, helpers.ErrCodeForbidden, "Voce nao tem permissao para excluir esta empresa", helpers.ErrorDetails{
+				"reason": "Esta empresa pertence a outro usuario",
 			})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete company"})
+		return helpers.CompanyDeleteFailed(c, err)
 	}
 
-	return c.JSON(fiber.Map{"message": "Company deleted successfully"})
+	return c.JSON(fiber.Map{"message": "Empresa excluida com sucesso"})
 }

@@ -28,8 +28,8 @@ describe('ApiService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorageMock.clear();
-    // Reset token in api instance
-    api.setToken(null);
+    // Reset tokens in api instance
+    api.setTokens(null, null);
   });
 
   afterEach(() => {
@@ -37,9 +37,11 @@ describe('ApiService', () => {
   });
 
   describe('Deve fazer login corretamente', () => {
-    it('deve fazer login e armazenar token', async () => {
+    it('deve fazer login e armazenar tokens', async () => {
       const mockResponse = {
-        token: 'jwt-token-123',
+        accessToken: 'jwt-access-token-123',
+        refreshToken: 'jwt-refresh-token-123',
+        expiresIn: 900,
         user: {
           id: 'user-1',
           name: 'Test User',
@@ -72,8 +74,8 @@ describe('ApiService', () => {
       );
 
       expect(result).toEqual(mockResponse);
-      expect(api.getToken()).toBe('jwt-token-123');
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('token', 'jwt-token-123');
+      expect(api.getToken()).toBe('jwt-access-token-123');
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('accessToken', 'jwt-access-token-123');
     });
 
     it('deve lancar erro com credenciais invalidas', async () => {
@@ -98,30 +100,45 @@ describe('ApiService', () => {
     });
   });
 
-  describe('Deve fazer logout e limpar token', () => {
-    it('deve remover token ao fazer logout', () => {
-      // Set token first
-      api.setToken('existing-token');
-      expect(api.getToken()).toBe('existing-token');
+  describe('Deve fazer logout e limpar tokens', () => {
+    it('deve remover tokens ao fazer logout', async () => {
+      // Set tokens first
+      api.setTokens('existing-access-token', 'existing-refresh-token');
+      expect(api.getToken()).toBe('existing-access-token');
+
+      // Mock the logout endpoint
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
 
       // Logout
-      api.logout();
+      await api.logout();
 
       expect(api.getToken()).toBeNull();
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('token');
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('accessToken');
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('refreshToken');
     });
 
-    it('deve limpar localStorage ao fazer logout', () => {
-      api.setToken('token-to-remove');
-      api.logout();
+    it('deve limpar localStorage ao fazer logout', async () => {
+      api.setTokens('token-to-remove', 'refresh-to-remove');
 
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('token');
+      // Mock the logout endpoint
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      await api.logout();
+
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('accessToken');
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('refreshToken');
     });
   });
 
   describe('Deve buscar transacoes', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve buscar transacoes com companyId', async () => {
@@ -145,10 +162,11 @@ describe('ApiService', () => {
           status: Status.OPEN,
         },
       ];
+      const mockPagination = { page: 1, limit: 50, total: 2, totalPages: 1 };
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ Data: mockTransactions, Pagination: { Page: 1, Limit: 50, Total: 2, TotalPages: 1 } }),
+        json: async () => ({ data: mockTransactions, pagination: mockPagination }),
       });
 
       const result = await api.getTransactions('company-1');
@@ -162,18 +180,20 @@ describe('ApiService', () => {
         })
       );
 
-      expect(result).toEqual(mockTransactions);
+      expect(result.data).toEqual(mockTransactions);
+      expect(result.pagination).toEqual(mockPagination);
     });
 
     it('deve retornar array vazio quando nao ha transacoes', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ Data: null, Pagination: { Page: 1, Limit: 50, Total: 0, TotalPages: 0 } }),
+        json: async () => ({ data: null, pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }),
       });
 
       const result = await api.getTransactions('company-1');
 
-      expect(result).toEqual([]);
+      expect(result.data).toEqual([]);
+      expect(result.pagination.total).toBe(0);
     });
 
     it('deve buscar transacao por ID', async () => {
@@ -322,7 +342,7 @@ describe('ApiService', () => {
 
   describe('Deve tratar erros de API', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve tratar erro 400 - Bad Request', async () => {
@@ -407,11 +427,11 @@ describe('ApiService', () => {
 
   describe('Autenticacao e Headers', () => {
     it('deve incluir token no header quando autenticado', async () => {
-      api.setToken('my-auth-token');
+      api.setTokens('my-auth-token', 'my-refresh-token');
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ Data: [], Pagination: {} }),
+        json: async () => ({ data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }),
       });
 
       await api.getTransactions('company-1');
@@ -427,7 +447,7 @@ describe('ApiService', () => {
     });
 
     it('nao deve incluir Authorization header quando nao autenticado', async () => {
-      api.setToken(null);
+      api.setTokens(null, null);
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -446,10 +466,11 @@ describe('ApiService', () => {
       expect(headers.Authorization).toBeUndefined();
     });
 
-    it('deve persistir token no localStorage', () => {
-      api.setToken('persistent-token');
+    it('deve persistir tokens no localStorage', () => {
+      api.setTokens('persistent-token', 'persistent-refresh');
 
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('token', 'persistent-token');
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('accessToken', 'persistent-token');
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('refreshToken', 'persistent-refresh');
     });
 
     it('deve recuperar token do localStorage', () => {
@@ -463,7 +484,7 @@ describe('ApiService', () => {
 
   describe('Funcionalidades adicionais da API', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve buscar estatisticas', async () => {
@@ -525,7 +546,9 @@ describe('ApiService', () => {
 
     it('deve registrar novo usuario', async () => {
       const mockResponse = {
-        token: 'new-user-token',
+        accessToken: 'new-user-access-token',
+        refreshToken: 'new-user-refresh-token',
+        expiresIn: 900,
         user: { id: 'user-new', name: 'New User', email: 'new@example.com' },
       };
 
@@ -547,7 +570,7 @@ describe('ApiService', () => {
         })
       );
       expect(result).toEqual(mockResponse);
-      expect(api.getToken()).toBe('new-user-token');
+      expect(api.getToken()).toBe('new-user-access-token');
     });
 
     it('deve buscar dados do usuario atual', async () => {
@@ -589,7 +612,7 @@ describe('ApiService', () => {
 
   describe('Quotes API', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve buscar orcamentos', async () => {
@@ -713,7 +736,7 @@ describe('ApiService', () => {
 
   describe('Categorias API', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve buscar categorias', async () => {
@@ -775,13 +798,13 @@ describe('ApiService', () => {
 
   describe('URL Handling', () => {
     beforeEach(() => {
-      api.setToken('valid-token');
+      api.setTokens('valid-token', 'valid-refresh');
     });
 
     it('deve lidar com endpoints que comecam com barra', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ Data: [], Pagination: {} }),
+        json: async () => ({ data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0 } }),
       });
 
       await api.getTransactions('company-1');

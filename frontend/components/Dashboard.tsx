@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useTransactions } from '../hooks/useTransactions';
 import { useDebounce } from '../hooks/useDebounce';
-import { Transaction, Category, CategoryType, Status } from '../types';
+import { Transaction, Category, CategoryType, Status, PaginationInfo } from '../types';
 
 import { api } from '../services/api';
 import { FinancialChart } from './FinancialChart';
@@ -21,7 +21,10 @@ import { useDateFilter } from '../contexts/DateFilterContext';
 import { DateSelector } from './DateSelector';
 import { TrendChart } from './TrendChart';
 import { TransactionModal } from './TransactionModal';
+import { Pagination } from './Pagination';
 import { formatCurrency } from '../utils/currency';
+
+const DEFAULT_PAGE_SIZE = 20;
 
 export const Dashboard: React.FC = () => {
     const { companyId } = useParams<{ companyId: string }>();
@@ -33,8 +36,11 @@ export const Dashboard: React.FC = () => {
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
     const [companyName, setCompanyName] = useState('Carregando...');
     const [categories, setCategories] = useState<Category[]>([]);
+    const [clientPage, setClientPage] = useState(1);
+    const [clientPageSize, setClientPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-    const filteredTransactions = useMemo(() => {
+    // Filter transactions by date and search
+    const allFilteredTransactions = useMemo(() => {
         return transactions.filter(t => {
             const matchesSearch = t.description?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
                 t.category.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
@@ -43,13 +49,42 @@ export const Dashboard: React.FC = () => {
         });
     }, [transactions, debouncedSearchTerm, month, year]);
 
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setClientPage(1);
+    }, [debouncedSearchTerm, month, year]);
+
+    // Calculate client-side pagination
+    const clientPagination: PaginationInfo = useMemo(() => ({
+        page: clientPage,
+        limit: clientPageSize,
+        total: allFilteredTransactions.length,
+        totalPages: Math.ceil(allFilteredTransactions.length / clientPageSize)
+    }), [clientPage, clientPageSize, allFilteredTransactions.length]);
+
+    // Get paginated transactions for current page
+    const filteredTransactions = useMemo(() => {
+        const startIndex = (clientPage - 1) * clientPageSize;
+        return allFilteredTransactions.slice(startIndex, startIndex + clientPageSize);
+    }, [allFilteredTransactions, clientPage, clientPageSize]);
+
+    // Stats should be calculated from ALL filtered transactions, not just the current page
     const currentStats = useMemo(() => {
         return {
-            paid: filteredTransactions.filter(t => t.status === Status.PAID).reduce((acc, t) => acc + t.amount, 0),
-            open: filteredTransactions.filter(t => t.status === Status.OPEN).reduce((acc, t) => acc + t.amount, 0),
-            total: filteredTransactions.reduce((acc, t) => acc + t.amount, 0)
+            paid: allFilteredTransactions.filter(t => t.status === Status.PAID).reduce((acc, t) => acc + t.amount, 0),
+            open: allFilteredTransactions.filter(t => t.status === Status.OPEN).reduce((acc, t) => acc + t.amount, 0),
+            total: allFilteredTransactions.reduce((acc, t) => acc + t.amount, 0)
         };
-    }, [filteredTransactions]);
+    }, [allFilteredTransactions]);
+
+    const handlePageChange = useCallback((page: number) => {
+        setClientPage(page);
+    }, []);
+
+    const handlePageSizeChange = useCallback((pageSize: number) => {
+        setClientPageSize(pageSize);
+        setClientPage(1);
+    }, []);
 
     useEffect(() => {
         if (companyId) {
@@ -318,7 +353,7 @@ export const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Empty State */}
-                    {filteredTransactions.length === 0 && (
+                    {allFilteredTransactions.length === 0 && (
                         <div className="py-12 text-center">
                             <div className="inline-flex p-4 bg-primary-50 rounded-2xl border border-primary-100 mb-4">
                                 <Wallet className="w-8 h-8 text-primary-400" />
@@ -330,6 +365,19 @@ export const Dashboard: React.FC = () => {
                             >
                                 + Adicionar primeira transacao
                             </button>
+                        </div>
+                    )}
+
+                    {/* Pagination */}
+                    {allFilteredTransactions.length > 0 && (
+                        <div className="border-t border-border">
+                            <Pagination
+                                pagination={clientPagination}
+                                onPageChange={handlePageChange}
+                                onPageSizeChange={handlePageSizeChange}
+                                pageSizeOptions={[10, 20, 50, 100]}
+                                disabled={loading}
+                            />
                         </div>
                     )}
                 </div>

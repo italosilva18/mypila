@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -286,4 +287,241 @@ func GetMonthName(month int) string {
 		return name
 	}
 	return ""
+}
+
+// =============================================================================
+// Financial validation constants
+// =============================================================================
+
+const (
+	// MaxAmount is the maximum allowed monetary value (prevents overflow issues)
+	// Using 999,999,999.99 as a sensible limit for financial applications
+	MaxAmount = 999999999.99
+
+	// MinAmount is the minimum positive amount allowed
+	MinAmount = 0.01
+
+	// MaxDecimalPlaces for monetary values
+	MaxDecimalPlaces = 2
+)
+
+// =============================================================================
+// COMPREHENSIVE FINANCIAL VALIDATION FUNCTIONS
+// =============================================================================
+
+// hasExcessiveDecimalPlaces checks if a float has more than the allowed decimal places
+// This helps prevent precision issues with monetary values
+func hasExcessiveDecimalPlaces(value float64, maxDecimals int) bool {
+	// Multiply by 10^maxDecimals and check if there is a fractional part
+	multiplier := math.Pow(10, float64(maxDecimals))
+	scaled := value * multiplier
+	return math.Abs(scaled-math.Round(scaled)) > 1e-9
+}
+
+// isValidFiniteNumber checks if a float64 is a valid finite number (not NaN or Inf)
+func isValidFiniteNumber(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+// ValidateAmount validates monetary values with comprehensive checks:
+// - Must be a valid finite number (not NaN or Infinity)
+// - Must be positive (greater than zero)
+// - Must not exceed the maximum allowed amount (prevents overflow)
+// - Must have at most 2 decimal places (standard for currency)
+func ValidateAmount(value float64, fieldName string) *ValidationError {
+	// Check for NaN or Infinity (potential attack vector or calculation error)
+	if !isValidFiniteNumber(value) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s contem um valor numerico invalido", fieldName),
+		}
+	}
+
+	// Check if positive
+	if value <= 0 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ser maior que zero", fieldName),
+		}
+	}
+
+	// Check maximum limit to prevent overflow
+	if value > MaxAmount {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s excede o valor maximo permitido de R$ 999.999.999,99", fieldName),
+		}
+	}
+
+	// Check decimal places (monetary values should have at most 2 decimal places)
+	if hasExcessiveDecimalPlaces(value, MaxDecimalPlaces) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ter no maximo 2 casas decimais", fieldName),
+		}
+	}
+
+	return nil
+}
+
+// ValidateAmountAllowZero validates monetary values that can be zero (e.g., budgets):
+// - Must be a valid finite number (not NaN or Infinity)
+// - Must be non-negative (zero or positive)
+// - Must not exceed the maximum allowed amount
+// - Must have at most 2 decimal places
+func ValidateAmountAllowZero(value float64, fieldName string) *ValidationError {
+	// Check for NaN or Infinity
+	if !isValidFiniteNumber(value) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s contem um valor numerico invalido", fieldName),
+		}
+	}
+
+	// Check if non-negative
+	if value < 0 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ser maior ou igual a zero", fieldName),
+		}
+	}
+
+	// Check maximum limit
+	if value > MaxAmount {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s excede o valor maximo permitido de R$ 999.999.999,99", fieldName),
+		}
+	}
+
+	// Check decimal places
+	if hasExcessiveDecimalPlaces(value, MaxDecimalPlaces) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ter no maximo 2 casas decimais", fieldName),
+		}
+	}
+
+	return nil
+}
+
+// ValidateDiscountValue validates discount values based on the discount type:
+// - For "PERCENT" type: must be between 0 and 100
+// - For "VALUE" type: must be non-negative and not exceed max amount
+// - Must be a valid finite number
+// - Must have at most 2 decimal places
+func ValidateDiscountValue(value float64, discountType string, fieldName string) *ValidationError {
+	// Check for NaN or Infinity
+	if !isValidFiniteNumber(value) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s contem um valor numerico invalido", fieldName),
+		}
+	}
+
+	// Check if non-negative
+	if value < 0 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ser maior ou igual a zero", fieldName),
+		}
+	}
+
+	// Validate based on discount type
+	discountTypeUpper := strings.ToUpper(discountType)
+	if discountTypeUpper == "PERCENT" {
+		// Percentage discount: 0-100
+		if value > 100 {
+			return &ValidationError{
+				Field:   fieldName,
+				Message: fmt.Sprintf("%s percentual deve estar entre 0 e 100", fieldName),
+			}
+		}
+	} else {
+		// Value discount: check max amount
+		if value > MaxAmount {
+			return &ValidationError{
+				Field:   fieldName,
+				Message: fmt.Sprintf("%s excede o valor maximo permitido de R$ 999.999.999,99", fieldName),
+			}
+		}
+	}
+
+	// Check decimal places
+	if hasExcessiveDecimalPlaces(value, MaxDecimalPlaces) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ter no maximo 2 casas decimais", fieldName),
+		}
+	}
+
+	return nil
+}
+
+// ValidateQuantity validates quantity values (used in quote items):
+// - Must be a valid finite number
+// - Must be positive
+// - Must not exceed a reasonable maximum (prevents overflow in calculations)
+// - Can have up to 4 decimal places (for fractional quantities like 0.5 hours)
+func ValidateQuantity(value float64, fieldName string) *ValidationError {
+	const maxQuantity = 999999.9999
+	const maxQuantityDecimals = 4
+
+	// Check for NaN or Infinity
+	if !isValidFiniteNumber(value) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s contem um valor numerico invalido", fieldName),
+		}
+	}
+
+	// Check if positive
+	if value <= 0 {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ser maior que zero", fieldName),
+		}
+	}
+
+	// Check maximum
+	if value > maxQuantity {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s excede o valor maximo permitido", fieldName),
+		}
+	}
+
+	// Check decimal places (allow up to 4 for quantities)
+	if hasExcessiveDecimalPlaces(value, maxQuantityDecimals) {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("%s deve ter no maximo %d casas decimais", fieldName, maxQuantityDecimals),
+		}
+	}
+
+	return nil
+}
+
+// ValidateUnitPrice validates unit price values:
+// - Must be a valid finite number
+// - Must be positive
+// - Must not exceed max amount
+// - Must have at most 2 decimal places
+func ValidateUnitPrice(value float64, fieldName string) *ValidationError {
+	return ValidateAmount(value, fieldName)
+}
+
+// ValidateBudget validates budget values for categories:
+// - Can be zero (no budget set)
+// - Must be non-negative
+// - Must not exceed max amount
+// - Must have at most 2 decimal places
+func ValidateBudget(value float64, fieldName string) *ValidationError {
+	return ValidateAmountAllowZero(value, fieldName)
+}
+
+// RoundToTwoDecimals rounds a float64 to 2 decimal places
+// This is useful for normalizing monetary values before storage
+func RoundToTwoDecimals(value float64) float64 {
+	return math.Round(value*100) / 100
 }

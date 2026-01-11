@@ -21,13 +21,13 @@ func GetCategories(c *fiber.Ctx) error {
 
 	companyId := c.Query("companyId")
 	if companyId == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Company ID is required"})
+		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
 	// Convert companyId string to ObjectID
 	companyObjID, err := primitive.ObjectIDFromHex(companyId)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -40,13 +40,13 @@ func GetCategories(c *fiber.Ctx) error {
 
 	cursor, err := collection.Find(ctx, bson.M{"companyId": companyObjID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch categories"})
+		return helpers.CategoryFetchFailed(c, err)
 	}
 	defer cursor.Close(ctx)
 
 	var categories []models.Category
 	if err = cursor.All(ctx, &categories); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse categories"})
+		return helpers.DatabaseError(c, "decode_categories", err)
 	}
 
 	// If no categories found, return empty array
@@ -63,13 +63,13 @@ func CreateCategory(c *fiber.Ctx) error {
 
 	companyId := c.Query("companyId")
 	if companyId == "" {
-		return helpers.SendValidationError(c, "companyId", "ID da empresa é obrigatório")
+		return helpers.MissingRequiredParam(c, "companyId")
 	}
 
 	// Convert companyId string to ObjectID
 	companyObjID, err := primitive.ObjectIDFromHex(companyId)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid company ID format"})
+		return helpers.InvalidIDFormat(c, "companyId")
 	}
 
 	// Validate company ownership
@@ -80,10 +80,10 @@ func CreateCategory(c *fiber.Ctx) error {
 
 	var req models.CreateCategoryRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 50),
@@ -92,6 +92,7 @@ func CreateCategory(c *fiber.Ctx) error {
 		helpers.ValidateNoScriptTags(req.Name, "name"),
 		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),
+		helpers.ValidateBudget(req.Budget, "budget"),
 	)
 
 	if helpers.HasErrors(errors) {
@@ -121,7 +122,7 @@ func CreateCategory(c *fiber.Ctx) error {
 
 	_, err = collection.InsertOne(ctx, category)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao criar categoria"})
+		return helpers.CategoryCreateFailed(c, err)
 	}
 
 	return c.Status(201).JSON(category)
@@ -134,7 +135,7 @@ func UpdateCategory(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return helpers.SendValidationError(c, "id", "Formato de ID inválido")
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -145,10 +146,10 @@ func UpdateCategory(c *fiber.Ctx) error {
 
 	var req models.UpdateCategoryRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Corpo da requisição inválido"})
+		return helpers.InvalidRequestBody(c)
 	}
 
-	// Validações
+	// Validations
 	errors := helpers.CollectErrors(
 		helpers.ValidateRequired(req.Name, "name"),
 		helpers.ValidateMaxLength(req.Name, "name", 50),
@@ -157,6 +158,7 @@ func UpdateCategory(c *fiber.Ctx) error {
 		helpers.ValidateNoScriptTags(req.Name, "name"),
 		helpers.ValidateMongoInjection(req.Name, "name"),
 		helpers.ValidateSQLInjection(req.Name, "name"),
+		helpers.ValidateBudget(req.Budget, "budget"),
 	)
 
 	if helpers.HasErrors(errors) {
@@ -179,13 +181,13 @@ func UpdateCategory(c *fiber.Ctx) error {
 
 	_, err = collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao atualizar categoria"})
+		return helpers.CategoryUpdateFailed(c, err)
 	}
 
 	var updatedCategory models.Category
 	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&updatedCategory)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Falha ao buscar categoria atualizada"})
+		return helpers.DatabaseError(c, "fetch_updated_category", err)
 	}
 
 	return c.JSON(updatedCategory)
@@ -198,7 +200,7 @@ func DeleteCategory(c *fiber.Ctx) error {
 	id := c.Params("id")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID"})
+		return helpers.InvalidIDFormat(c, "id")
 	}
 
 	// Validate ownership
@@ -211,7 +213,7 @@ func DeleteCategory(c *fiber.Ctx) error {
 
 	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete category"})
+		return helpers.CategoryDeleteFailed(c, err)
 	}
 
 	return c.SendStatus(204)

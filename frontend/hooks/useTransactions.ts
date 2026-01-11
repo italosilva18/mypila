@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Transaction, Status } from '../types';
+import { Transaction, Status, PaginationInfo } from '../types';
 import { api } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 
@@ -9,14 +9,22 @@ interface Stats {
   total: number;
 }
 
+const DEFAULT_PAGE_SIZE = 50;
+
 export function useTransactions(companyId: string) {
   const { addToast } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stats, setStats] = useState<Stats>({ paid: 0, open: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    limit: DEFAULT_PAGE_SIZE,
+    total: 0,
+    totalPages: 0
+  });
 
-  const fetchTransactions = useCallback(async () => {
+  const fetchTransactions = useCallback(async (page: number = 1, limit: number = DEFAULT_PAGE_SIZE) => {
     if (!companyId) {
       setLoading(false);
       return;
@@ -24,8 +32,9 @@ export function useTransactions(companyId: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.getTransactions(companyId);
-      setTransactions(data);
+      const response = await api.getTransactions(companyId, page, limit);
+      setTransactions(response.data);
+      setPagination(response.pagination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
     } finally {
@@ -44,12 +53,33 @@ export function useTransactions(companyId: string) {
   }, [companyId]);
 
   const refreshData = useCallback(async () => {
-    await Promise.all([fetchTransactions(), fetchStats()]);
-  }, [fetchTransactions, fetchStats]);
+    await Promise.all([fetchTransactions(pagination.page, pagination.limit), fetchStats()]);
+  }, [fetchTransactions, fetchStats, pagination.page, pagination.limit]);
+
+  const goToPage = useCallback(async (page: number) => {
+    await fetchTransactions(page, pagination.limit);
+  }, [fetchTransactions, pagination.limit]);
+
+  const nextPage = useCallback(async () => {
+    if (pagination.page < pagination.totalPages) {
+      await goToPage(pagination.page + 1);
+    }
+  }, [goToPage, pagination.page, pagination.totalPages]);
+
+  const prevPage = useCallback(async () => {
+    if (pagination.page > 1) {
+      await goToPage(pagination.page - 1);
+    }
+  }, [goToPage, pagination.page]);
+
+  const setPageSize = useCallback(async (limit: number) => {
+    await fetchTransactions(1, limit);
+  }, [fetchTransactions]);
 
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    fetchTransactions(1, DEFAULT_PAGE_SIZE);
+    fetchStats();
+  }, [companyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createTransaction = useCallback(async (data: Omit<Transaction, 'id' | 'companyId'>) => {
     if (!companyId) return;
@@ -135,11 +165,16 @@ export function useTransactions(companyId: string) {
     stats,
     loading,
     error,
+    pagination,
     createTransaction,
     updateTransaction,
     deleteTransaction,
     toggleStatus,
     refreshData,
     seedData,
+    goToPage,
+    nextPage,
+    prevPage,
+    setPageSize,
   };
 }

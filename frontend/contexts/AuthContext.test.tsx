@@ -23,7 +23,9 @@ describe('AuthContext', () => {
   };
 
   const mockAuthResponse: AuthResponse = {
-    token: 'mock-token-123',
+    accessToken: 'mock-access-token-123',
+    refreshToken: 'mock-refresh-token-123',
+    expiresIn: 900,
     user: mockUser,
   };
 
@@ -171,8 +173,8 @@ describe('AuthContext', () => {
       const secondUser: User = { id: '2', name: 'User 2', email: 'user2@test.com' };
 
       vi.mocked(api.login)
-        .mockResolvedValueOnce({ token: 'token1', user: firstUser })
-        .mockResolvedValueOnce({ token: 'token2', user: secondUser });
+        .mockResolvedValueOnce({ accessToken: 'token1', refreshToken: 'refresh1', expiresIn: 900, user: firstUser })
+        .mockResolvedValueOnce({ accessToken: 'token2', refreshToken: 'refresh2', expiresIn: 900, user: secondUser });
 
       const { result } = renderHook(() => useAuth(), {
         wrapper: AuthProvider,
@@ -499,11 +501,15 @@ describe('AuthContext', () => {
   describe('Complete Authentication Flow', () => {
     it('should handle complete user journey: register -> logout -> login', async () => {
       const registerResponse: AuthResponse = {
-        token: 'register-token',
+        accessToken: 'register-token',
+        refreshToken: 'register-refresh',
+        expiresIn: 900,
         user: mockUser,
       };
       const loginResponse: AuthResponse = {
-        token: 'login-token',
+        accessToken: 'login-token',
+        refreshToken: 'login-refresh',
+        expiresIn: 900,
         user: mockUser,
       };
 

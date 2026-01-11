@@ -40,6 +40,11 @@ func CreateIndexes(db *mongo.Database) error {
 		return err
 	}
 
+	// Refresh tokens collection indexes
+	if err := createRefreshTokensIndexes(ctx, db); err != nil {
+		return err
+	}
+
 	log.Println("All database indexes created successfully")
 	return nil
 }
@@ -202,5 +207,56 @@ func createRecurringIndexes(ctx context.Context, db *mongo.Database) error {
 	}
 
 	log.Println("Created indexes: recurring.companyId_idx, companyId_dayOfMonth_idx")
+	return nil
+}
+
+// createRefreshTokensIndexes creates indexes for the refresh_tokens collection
+func createRefreshTokensIndexes(ctx context.Context, db *mongo.Database) error {
+	collection := db.Collection("refresh_tokens")
+
+	// Unique index on tokenHash for fast token lookup
+	// This is the primary lookup method when validating refresh tokens
+	tokenHashIndex := mongo.IndexModel{
+		Keys:    bson.D{{Key: "tokenHash", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("tokenHash_unique_idx"),
+	}
+
+	// Index on userId for finding all tokens for a user (logout-all functionality)
+	userIdIndex := mongo.IndexModel{
+		Keys:    bson.D{{Key: "userId", Value: 1}},
+		Options: options.Index().SetName("userId_idx"),
+	}
+
+	// Compound index on userId + isRevoked for efficient queries
+	// Used when revoking all active tokens for a user
+	userIdRevokedIndex := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "userId", Value: 1},
+			{Key: "isRevoked", Value: 1},
+		},
+		Options: options.Index().SetName("userId_isRevoked_idx"),
+	}
+
+	// TTL index on expiresAt for automatic cleanup of expired tokens
+	// MongoDB will automatically delete documents when expiresAt is past
+	expiresAtIndex := mongo.IndexModel{
+		Keys:    bson.D{{Key: "expiresAt", Value: 1}},
+		Options: options.Index().SetExpireAfterSeconds(0).SetName("expiresAt_ttl_idx"),
+	}
+
+	indexes := []mongo.IndexModel{
+		tokenHashIndex,
+		userIdIndex,
+		userIdRevokedIndex,
+		expiresAtIndex,
+	}
+
+	_, err := collection.Indexes().CreateMany(ctx, indexes)
+	if err != nil {
+		log.Printf("Warning: Failed to create indexes on refresh_tokens: %v", err)
+		return err
+	}
+
+	log.Println("Created indexes: refresh_tokens.tokenHash_unique_idx, userId_idx, userId_isRevoked_idx, expiresAt_ttl_idx")
 	return nil
 }

@@ -25,6 +25,8 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// AuthResponse is deprecated - use AuthResponseWithTokens instead
+// Kept for backward compatibility during migration
 type AuthResponse struct {
 	Token string `json:"token"`
 	User  User   `json:"user"`
