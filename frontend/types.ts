@@ -28,10 +28,21 @@ export interface Transaction {
   companyId: string;
   month: string; // e.g., "Janeiro", "Fevereiro"
   year: number;
+  dueDay: number; // 1-31
   amount: number;
   category: string;
   status: Status;
   description?: string;
+}
+
+export interface UpcomingTransaction extends Transaction {
+  daysUntilDue: number;
+}
+
+export interface UpcomingResponse {
+  upcoming: UpcomingTransaction[];
+  count: number;
+  days: number;
 }
 
 export interface Company {

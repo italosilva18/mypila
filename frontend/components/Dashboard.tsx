@@ -24,6 +24,7 @@ import { DateSelector } from './DateSelector';
 import { TrendChart } from './TrendChart';
 import { TransactionModal } from './TransactionModal';
 import { Pagination } from './Pagination';
+import { NotificationBell } from './NotificationBell';
 import { formatCurrency } from '../utils/currency';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -184,13 +185,16 @@ export const Dashboard: React.FC = () => {
                             <DateSelector />
                         </div>
 
-                        <button
-                            onClick={() => setShowModal(true)}
-                            className="btn-primary flex items-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Nova Transacao
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <NotificationBell companyId={companyId!} />
+                            <button
+                                onClick={() => setShowModal(true)}
+                                className="btn-primary flex items-center gap-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Nova Transacao
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -205,8 +209,9 @@ export const Dashboard: React.FC = () => {
                             </Link>
                             <h1 className="text-sm font-semibold text-foreground truncate max-w-[120px]">{companyName}</h1>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                             <DateSelector />
+                            <NotificationBell companyId={companyId!} />
                             <button
                                 onClick={() => setShowModal(true)}
                                 className="bg-gradient-primary text-white p-1.5 rounded-lg shadow-soft active:scale-95 transition-all"

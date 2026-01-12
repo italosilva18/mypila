@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount DECIMAL(15, 2) NOT NULL,
     month VARCHAR(20) NOT NULL,
     year INTEGER NOT NULL,
+    due_day INTEGER DEFAULT 1 CHECK (due_day >= 1 AND due_day <= 31),
     status VARCHAR(20) NOT NULL DEFAULT 'ABERTO' CHECK (status IN ('PAGO', 'ABERTO')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX idx_transactions_company_id ON transactions(company_id);
 CREATE INDEX idx_transactions_month_year ON transactions(month, year);
 CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_transactions_due_day ON transactions(due_day);
 
 -- Recurring transactions table
 CREATE TABLE IF NOT EXISTS recurring_transactions (
@@ -182,3 +184,12 @@ CREATE TRIGGER update_quotes_updated_at BEFORE UPDATE ON quotes FOR EACH ROW EXE
 
 -- Sequence for quote numbers per company
 CREATE SEQUENCE IF NOT EXISTS quote_number_seq START 1;
+
+-- Migration: Add due_day column to transactions (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'due_day') THEN
+        ALTER TABLE transactions ADD COLUMN due_day INTEGER DEFAULT 1 CHECK (due_day >= 1 AND due_day <= 31);
+        CREATE INDEX IF NOT EXISTS idx_transactions_due_day ON transactions(due_day);
+    END IF;
+END $$;

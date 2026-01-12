@@ -156,6 +156,7 @@ func main() {
 	// Transactions routes
 	transactions := api.Group("/transactions")
 	transactions.Get("/", handlers.GetAllTransactions)
+	transactions.Get("/upcoming", handlers.GetUpcomingTransactions)
 	transactions.Get("/:id", handlers.GetTransaction)
 	transactions.Post("/", middleware.ModerateLimiter(), handlers.CreateTransaction)
 	transactions.Put("/:id", handlers.UpdateTransaction)

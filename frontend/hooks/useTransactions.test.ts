@@ -34,6 +34,7 @@ describe('useTransactions', () => {
       companyId: mockCompanyId,
       month: 'Janeiro',
       year: 2024,
+      dueDay: 1,
       amount: 1000,
       category: 'Salario',
       status: Status.PAID,
@@ -44,6 +45,7 @@ describe('useTransactions', () => {
       companyId: mockCompanyId,
       month: 'Fevereiro',
       year: 2024,
+      dueDay: 1,
       amount: 500,
       category: 'Bonus',
       status: Status.OPEN,
@@ -131,6 +133,7 @@ describe('useTransactions', () => {
           companyId: newCompanyId,
           month: 'Marco',
           year: 2024,
+          dueDay: 1,
           amount: 2000,
           category: 'Projeto',
           status: Status.PAID,
@@ -165,6 +168,7 @@ describe('useTransactions', () => {
       const newTransactionData = {
         month: 'Marco',
         year: 2024,
+        dueDay: 1,
         amount: 1500,
         category: 'Projeto',
         status: Status.OPEN,
@@ -209,6 +213,7 @@ describe('useTransactions', () => {
         await result.current.createTransaction({
           month: 'Janeiro',
           year: 2024,
+          dueDay: 1,
           amount: 100,
           category: 'Test',
           status: Status.OPEN,
@@ -233,6 +238,7 @@ describe('useTransactions', () => {
           await result.current.createTransaction({
             month: 'Janeiro',
             year: 2024,
+            dueDay: 1,
             amount: 100,
             category: 'Test',
             status: Status.OPEN,
@@ -253,6 +259,7 @@ describe('useTransactions', () => {
       const updateData = {
         month: 'Janeiro',
         year: 2024,
+        dueDay: 1,
         amount: 1200,
         category: 'Salario',
         status: Status.PAID,
@@ -300,6 +307,7 @@ describe('useTransactions', () => {
         await result.current.updateTransaction('trans-1', {
           month: 'Janeiro',
           year: 2024,
+          dueDay: 1,
           amount: 100,
           category: 'Test',
           status: Status.OPEN,
@@ -324,6 +332,7 @@ describe('useTransactions', () => {
           await result.current.updateTransaction('trans-1', {
             month: 'Janeiro',
             year: 2024,
+            dueDay: 1,
             amount: 100,
             category: 'Test',
             status: Status.OPEN,
@@ -504,6 +513,7 @@ describe('useTransactions', () => {
         companyId: mockCompanyId,
         month: 'Marco',
         year: 2024,
+        dueDay: 1,
         amount: 1000,
         category: 'Salario',
         status: Status.PAID,
@@ -519,6 +529,7 @@ describe('useTransactions', () => {
         await result.current.createTransaction({
           month: 'Marco',
           year: 2024,
+          dueDay: 1,
           amount: 1000,
           category: 'Salario',
           status: Status.PAID,

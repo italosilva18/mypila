@@ -25,6 +25,7 @@ type Transaction struct {
 	CompanyID   uuid.UUID `json:"companyId"`
 	Month       string    `json:"month"`
 	Year        int       `json:"year"`
+	DueDay      int       `json:"dueDay"`
 	Amount      float64   `json:"amount"`
 	Category    string    `json:"category"`
 	Status      Status    `json:"status"`
@@ -37,6 +38,7 @@ type CreateTransactionRequest struct {
 	CompanyID   string  `json:"companyId"`
 	Month       string  `json:"month"`
 	Year        int     `json:"year"`
+	DueDay      int     `json:"dueDay"`
 	Amount      float64 `json:"amount"`
 	Category    string  `json:"category"`
 	Status      Status  `json:"status"`
@@ -46,10 +48,17 @@ type CreateTransactionRequest struct {
 type UpdateTransactionRequest struct {
 	Month       string  `json:"month"`
 	Year        int     `json:"year"`
+	DueDay      int     `json:"dueDay"`
 	Amount      float64 `json:"amount"`
 	Category    string  `json:"category"`
 	Status      Status  `json:"status"`
 	Description string  `json:"description,omitempty"`
+}
+
+// UpcomingTransaction represents a transaction that is due soon
+type UpcomingTransaction struct {
+	Transaction
+	DaysUntilDue int `json:"daysUntilDue"`
 }
 
 type Stats struct {

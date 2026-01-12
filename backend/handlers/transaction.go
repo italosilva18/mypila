@@ -57,9 +57,9 @@ func GetAllTransactions(c *fiber.Ctx) error {
 
 		// Fetch transactions
 		pgRows, err := database.Query(ctx,
-			`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+			`SELECT id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at
 			 FROM transactions WHERE company_id = $1
-			 ORDER BY year DESC, month DESC
+			 ORDER BY year DESC, month DESC, due_day DESC
 			 LIMIT $2 OFFSET $3`,
 			companyID, limit, offset)
 		if err != nil {
@@ -80,11 +80,11 @@ func GetAllTransactions(c *fiber.Ctx) error {
 
 		// Fetch transactions
 		pgRows, err := database.Query(ctx,
-			`SELECT t.id, t.company_id, t.category, t.description, t.amount, t.month, t.year, t.status, t.created_at, t.updated_at
+			`SELECT t.id, t.company_id, t.category, t.description, t.amount, t.month, t.year, t.due_day, t.status, t.created_at, t.updated_at
 			 FROM transactions t
 			 INNER JOIN companies c ON t.company_id = c.id
 			 WHERE c.user_id = $1
-			 ORDER BY t.year DESC, t.month DESC
+			 ORDER BY t.year DESC, t.month DESC, t.due_day DESC
 			 LIMIT $2 OFFSET $3`,
 			userID, limit, offset)
 		if err != nil {
@@ -106,11 +106,17 @@ func GetAllTransactions(c *fiber.Ctx) error {
 	for pgRows.Next() {
 		var t models.Transaction
 		var description *string
-		if err := pgRows.Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		var dueDay *int
+		if err := pgRows.Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &dueDay, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return helpers.DatabaseError(c, "scan_transaction", err)
 		}
 		if description != nil {
 			t.Description = *description
+		}
+		if dueDay != nil {
+			t.DueDay = *dueDay
+		} else {
+			t.DueDay = 1
 		}
 		transactions = append(transactions, t)
 	}
@@ -176,15 +182,21 @@ func GetTransaction(c *fiber.Ctx) error {
 	// Fetch full transaction
 	var t models.Transaction
 	var description *string
+	var dueDay *int
 	err = database.QueryRow(ctx,
-		`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+		`SELECT id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at
 		 FROM transactions WHERE id = $1`,
-		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &dueDay, &t.Status, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return helpers.TransactionNotFound(c)
 	}
 	if description != nil {
 		t.Description = *description
+	}
+	if dueDay != nil {
+		t.DueDay = *dueDay
+	} else {
+		t.DueDay = 1
 	}
 
 	_ = transaction // ownership validation returns the transaction
@@ -235,12 +247,19 @@ func CreateTransaction(c *fiber.Ctx) error {
 		return err
 	}
 
+	// Default due day to 1 if not provided
+	dueDay := req.DueDay
+	if dueDay < 1 || dueDay > 31 {
+		dueDay = 1
+	}
+
 	now := time.Now()
 	transaction := models.Transaction{
 		ID:          uuid.New(),
 		CompanyID:   companyID,
 		Month:       req.Month,
 		Year:        req.Year,
+		DueDay:      dueDay,
 		Amount:      req.Amount,
 		Category:    req.Category,
 		Status:      req.Status,
@@ -250,10 +269,10 @@ func CreateTransaction(c *fiber.Ctx) error {
 	}
 
 	_, err = database.Pool.Exec(ctx,
-		`INSERT INTO transactions (id, company_id, category, description, amount, month, year, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		`INSERT INTO transactions (id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		transaction.ID, transaction.CompanyID, transaction.Category, transaction.Description,
-		transaction.Amount, transaction.Month, transaction.Year, transaction.Status,
+		transaction.Amount, transaction.Month, transaction.Year, transaction.DueDay, transaction.Status,
 		transaction.CreatedAt, transaction.UpdatedAt)
 	if err != nil {
 		return helpers.TransactionCreateFailed(c, err)
@@ -306,11 +325,17 @@ func UpdateTransaction(c *fiber.Ctx) error {
 	req.Description = helpers.SanitizeString(req.Description)
 	req.Category = helpers.SanitizeString(req.Category)
 
+	// Default due day to 1 if not provided
+	dueDay := req.DueDay
+	if dueDay < 1 || dueDay > 31 {
+		dueDay = 1
+	}
+
 	now := time.Now()
 	result, err := database.Pool.Exec(ctx,
-		`UPDATE transactions SET month = $1, year = $2, amount = $3, category = $4, status = $5, description = $6, updated_at = $7
-		 WHERE id = $8`,
-		req.Month, req.Year, req.Amount, req.Category, req.Status, req.Description, now, transactionID)
+		`UPDATE transactions SET month = $1, year = $2, due_day = $3, amount = $4, category = $5, status = $6, description = $7, updated_at = $8
+		 WHERE id = $9`,
+		req.Month, req.Year, dueDay, req.Amount, req.Category, req.Status, req.Description, now, transactionID)
 	if err != nil {
 		return helpers.TransactionUpdateFailed(c, err)
 	}
@@ -322,15 +347,21 @@ func UpdateTransaction(c *fiber.Ctx) error {
 	// Fetch updated transaction
 	var t models.Transaction
 	var description *string
+	var dueDayPtr *int
 	err = database.QueryRow(ctx,
-		`SELECT id, company_id, category, description, amount, month, year, status, created_at, updated_at
+		`SELECT id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at
 		 FROM transactions WHERE id = $1`,
-		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+		transactionID).Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &dueDayPtr, &t.Status, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return helpers.DatabaseError(c, "fetch_transaction", err)
 	}
 	if description != nil {
 		t.Description = *description
+	}
+	if dueDayPtr != nil {
+		t.DueDay = *dueDayPtr
+	} else {
+		t.DueDay = 1
 	}
 
 	return c.JSON(t)
@@ -513,4 +544,134 @@ func SeedTransactions(c *fiber.Ctx) error {
 	}
 
 	return c.Status(201).JSON(fiber.Map{"message": "Data seeded successfully", "count": len(sampleData)})
+}
+
+// GetUpcomingTransactions returns transactions that are due soon (within specified days)
+func GetUpcomingTransactions(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Get authenticated user ID
+	userID, err := helpers.GetUserIDFromContext(c)
+	if err != nil {
+		return err
+	}
+
+	// Parse days parameter (default: 7 days)
+	daysStr := c.Query("days", "7")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days < 1 {
+		days = 7
+	}
+	if days > 30 {
+		days = 30
+	}
+
+	companyIDStr := c.Query("companyId")
+
+	// Month name to number mapping
+	monthToNum := map[string]int{
+		"Janeiro": 1, "Fevereiro": 2, "Marco": 3, "Abril": 4,
+		"Maio": 5, "Junho": 6, "Julho": 7, "Agosto": 8,
+		"Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12,
+	}
+
+	now := time.Now()
+	futureDate := now.AddDate(0, 0, days)
+
+	var rows interface {
+		Close()
+		Next() bool
+		Scan(dest ...interface{}) error
+	}
+
+	if companyIDStr != "" {
+		companyID, err := uuid.Parse(companyIDStr)
+		if err != nil {
+			return helpers.InvalidIDFormat(c, "companyId")
+		}
+
+		// Validate ownership
+		_, err = helpers.ValidateCompanyOwnership(c, companyID)
+		if err != nil {
+			return err
+		}
+
+		// Fetch open transactions for this company
+		pgRows, err := database.Query(ctx,
+			`SELECT id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at
+			 FROM transactions
+			 WHERE company_id = $1 AND status = 'ABERTO'
+			 ORDER BY year, month, due_day`,
+			companyID)
+		if err != nil {
+			return helpers.TransactionFetchFailed(c, err)
+		}
+		rows = pgRows
+	} else {
+		// Fetch open transactions for all user's companies
+		pgRows, err := database.Query(ctx,
+			`SELECT t.id, t.company_id, t.category, t.description, t.amount, t.month, t.year, t.due_day, t.status, t.created_at, t.updated_at
+			 FROM transactions t
+			 INNER JOIN companies c ON t.company_id = c.id
+			 WHERE c.user_id = $1 AND t.status = 'ABERTO'
+			 ORDER BY t.year, t.month, t.due_day`,
+			userID)
+		if err != nil {
+			return helpers.TransactionFetchFailed(c, err)
+		}
+		rows = pgRows
+	}
+
+	defer rows.Close()
+
+	var upcomingTransactions []models.UpcomingTransaction
+
+	for rows.Next() {
+		var t models.Transaction
+		var description *string
+		var dueDay *int
+		if err := rows.Scan(&t.ID, &t.CompanyID, &t.Category, &description, &t.Amount, &t.Month, &t.Year, &dueDay, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return helpers.DatabaseError(c, "scan_transaction", err)
+		}
+		if description != nil {
+			t.Description = *description
+		}
+		if dueDay != nil {
+			t.DueDay = *dueDay
+		} else {
+			t.DueDay = 1
+		}
+
+		// Calculate due date
+		monthNum, ok := monthToNum[t.Month]
+		if !ok {
+			continue
+		}
+
+		dueDate := time.Date(t.Year, time.Month(monthNum), t.DueDay, 0, 0, 0, 0, time.Local)
+
+		// Check if due date is within the range (today to futureDate)
+		if dueDate.After(now.AddDate(0, 0, -1)) && !dueDate.After(futureDate) {
+			daysUntilDue := int(dueDate.Sub(now).Hours() / 24)
+			if daysUntilDue < 0 {
+				daysUntilDue = 0 // Already overdue
+			}
+
+			upcomingTransactions = append(upcomingTransactions, models.UpcomingTransaction{
+				Transaction:  t,
+				DaysUntilDue: daysUntilDue,
+			})
+		}
+	}
+
+	if upcomingTransactions == nil {
+		upcomingTransactions = []models.UpcomingTransaction{}
+	}
+
+	return c.JSON(fiber.Map{
+		"upcoming": upcomingTransactions,
+		"count":    len(upcomingTransactions),
+		"days":     days,
+	})
 }

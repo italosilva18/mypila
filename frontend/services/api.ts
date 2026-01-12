@@ -1,4 +1,4 @@
-import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus, PaginationInfo } from '../types';
+import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus, PaginationInfo, UpcomingResponse } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081/api';
 
@@ -272,6 +272,13 @@ class ApiService {
   async getAllTransactions(companyId: string): Promise<Transaction[]> {
     const response = await this.getTransactions(companyId, 1, 1000);
     return response.data;
+  }
+
+  async getUpcomingTransactions(companyId?: string, days: number = 7): Promise<UpcomingResponse> {
+    const params = new URLSearchParams();
+    if (companyId) params.append('companyId', companyId);
+    params.append('days', days.toString());
+    return this.request<UpcomingResponse>(`/transactions/upcoming?${params.toString()}`);
   }
 
   async getTransaction(id: string): Promise<Transaction> {

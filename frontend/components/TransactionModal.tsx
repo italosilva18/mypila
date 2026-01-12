@@ -25,6 +25,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
   const [formData, setFormData] = useState({
     month: 'Janeiro',
     year: new Date().getFullYear(),
+    dueDay: 1,
     amount: 0,
     category: '',
     status: Status.OPEN,
@@ -52,6 +53,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
       setFormData({
         month: transaction.month,
         year: transaction.year,
+        dueDay: transaction.dueDay || 1,
         amount: transaction.amount,
         category: transaction.category,
         status: transaction.status,
@@ -61,6 +63,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
       setFormData({
         month: 'Janeiro',
         year: new Date().getFullYear(),
+        dueDay: 1,
         amount: 0,
         category: categories.length > 0 ? categories[0].name : '',
         status: Status.OPEN,
@@ -233,7 +236,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 md:gap-4">
+          <div className="grid grid-cols-3 gap-3 md:gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
                 Mes <span className="text-destructive">*</span>
@@ -260,6 +263,24 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
                 onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) || new Date().getFullYear() })}
               />
               <ErrorMessage error={getError('year')} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                Dia Venc.
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                className="input"
+                value={formData.dueDay}
+                onChange={(e) => {
+                  let day = parseInt(e.target.value) || 1;
+                  if (day < 1) day = 1;
+                  if (day > 31) day = 31;
+                  setFormData({ ...formData, dueDay: day });
+                }}
+              />
             </div>
           </div>
 
