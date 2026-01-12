@@ -9,7 +9,9 @@ import {
     CheckCircle2,
     AlertCircle,
     Edit2,
-    Trash2
+    Trash2,
+    Filter,
+    X
 } from 'lucide-react';
 import { useTransactions } from '../hooks/useTransactions';
 import { useDebounce } from '../hooks/useDebounce';
@@ -39,20 +41,46 @@ export const Dashboard: React.FC = () => {
     const [clientPage, setClientPage] = useState(1);
     const [clientPageSize, setClientPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-    // Filter transactions by date and search
+    // Filter states
+    const [statusFilter, setStatusFilter] = useState<Status | 'ALL'>('ALL');
+    const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+    const [typeFilter, setTypeFilter] = useState<CategoryType | 'ALL'>('ALL');
+    const [showFilters, setShowFilters] = useState(false);
+
+    // Get category type by name
+    const getCategoryType = useCallback((categoryName: string): CategoryType | null => {
+        const category = categories.find(c => c.name === categoryName);
+        return category ? category.type : null;
+    }, [categories]);
+
+    // Filter transactions by date, search, status, category, and type
     const allFilteredTransactions = useMemo(() => {
         return transactions.filter(t => {
             const matchesSearch = t.description?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
                 t.category.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
             const matchesDate = t.month === month && t.year === year;
-            return matchesSearch && matchesDate;
+            const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
+            const matchesCategory = categoryFilter === 'ALL' || t.category === categoryFilter;
+            const matchesType = typeFilter === 'ALL' || getCategoryType(t.category) === typeFilter;
+            return matchesSearch && matchesDate && matchesStatus && matchesCategory && matchesType;
         });
-    }, [transactions, debouncedSearchTerm, month, year]);
+    }, [transactions, debouncedSearchTerm, month, year, statusFilter, categoryFilter, typeFilter, getCategoryType]);
 
     // Reset to page 1 when filters change
     useEffect(() => {
         setClientPage(1);
-    }, [debouncedSearchTerm, month, year]);
+    }, [debouncedSearchTerm, month, year, statusFilter, categoryFilter, typeFilter]);
+
+    // Clear all filters
+    const clearFilters = useCallback(() => {
+        setStatusFilter('ALL');
+        setCategoryFilter('ALL');
+        setTypeFilter('ALL');
+        setSearchTerm('');
+    }, []);
+
+    // Check if any filter is active
+    const hasActiveFilters = statusFilter !== 'ALL' || categoryFilter !== 'ALL' || typeFilter !== 'ALL' || searchTerm !== '';
 
     // Calculate client-side pagination
     const clientPagination: PaginationInfo = useMemo(() => ({
@@ -233,18 +261,112 @@ export const Dashboard: React.FC = () => {
 
                 {/* Transactions Section */}
                 <div className="card overflow-hidden">
-                    <div className="p-2 md:p-6 border-b border-border flex flex-row gap-2 md:gap-4 justify-between items-center">
-                        <h2 className="text-xs md:text-lg font-semibold md:font-bold text-foreground">Transacoes</h2>
-                        <div className="relative flex-1 max-w-[180px] md:max-w-[256px]">
-                            <Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 w-3 h-3 md:w-4 md:h-4 text-muted" />
-                            <input
-                                type="text"
-                                placeholder="Buscar..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full input py-1.5 md:py-2 pl-7 md:pl-10 pr-2 md:pr-4 text-[10px] md:text-sm"
-                            />
+                    <div className="p-2 md:p-6 border-b border-border">
+                        <div className="flex flex-row gap-2 md:gap-4 justify-between items-center">
+                            <h2 className="text-xs md:text-lg font-semibold md:font-bold text-foreground">Transacoes</h2>
+                            <div className="flex items-center gap-2">
+                                <div className="relative flex-1 max-w-[140px] md:max-w-[200px]">
+                                    <Search className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 w-3 h-3 md:w-4 md:h-4 text-muted" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full input py-1.5 md:py-2 pl-7 md:pl-10 pr-2 md:pr-4 text-[10px] md:text-sm"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => setShowFilters(!showFilters)}
+                                    className={`p-1.5 md:p-2 rounded-lg transition-colors ${showFilters || hasActiveFilters ? 'bg-primary-100 text-primary-600' : 'hover:bg-primary-50 text-muted'}`}
+                                    title="Filtros"
+                                >
+                                    <Filter className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                </button>
+                                {hasActiveFilters && (
+                                    <button
+                                        onClick={clearFilters}
+                                        className="p-1.5 md:p-2 rounded-lg hover:bg-destructive-light text-muted hover:text-destructive transition-colors"
+                                        title="Limpar filtros"
+                                    >
+                                        <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    </button>
+                                )}
+                            </div>
                         </div>
+
+                        {/* Filter Panel */}
+                        {showFilters && (
+                            <div className="mt-3 pt-3 border-t border-border grid grid-cols-3 gap-2 md:gap-4">
+                                {/* Status Filter */}
+                                <div>
+                                    <label className="block text-[9px] md:text-xs font-medium text-muted mb-1">Status</label>
+                                    <select
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value as Status | 'ALL')}
+                                        className="w-full input py-1 md:py-2 text-[10px] md:text-sm"
+                                    >
+                                        <option value="ALL">Todos</option>
+                                        <option value={Status.PAID}>Pago</option>
+                                        <option value={Status.OPEN}>Aberto</option>
+                                    </select>
+                                </div>
+
+                                {/* Category Filter */}
+                                <div>
+                                    <label className="block text-[9px] md:text-xs font-medium text-muted mb-1">Categoria</label>
+                                    <select
+                                        value={categoryFilter}
+                                        onChange={(e) => setCategoryFilter(e.target.value)}
+                                        className="w-full input py-1 md:py-2 text-[10px] md:text-sm"
+                                    >
+                                        <option value="ALL">Todas</option>
+                                        {categories.map(cat => (
+                                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Type Filter */}
+                                <div>
+                                    <label className="block text-[9px] md:text-xs font-medium text-muted mb-1">Tipo</label>
+                                    <select
+                                        value={typeFilter}
+                                        onChange={(e) => setTypeFilter(e.target.value as CategoryType | 'ALL')}
+                                        className="w-full input py-1 md:py-2 text-[10px] md:text-sm"
+                                    >
+                                        <option value="ALL">Todos</option>
+                                        <option value={CategoryType.EXPENSE}>Despesa</option>
+                                        <option value={CategoryType.INCOME}>Receita</option>
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Active Filters Badge */}
+                        {hasActiveFilters && !showFilters && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {statusFilter !== 'ALL' && (
+                                    <span className="text-[9px] md:text-xs px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full">
+                                        Status: {statusFilter === Status.PAID ? 'Pago' : 'Aberto'}
+                                    </span>
+                                )}
+                                {categoryFilter !== 'ALL' && (
+                                    <span className="text-[9px] md:text-xs px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full">
+                                        Categoria: {categoryFilter}
+                                    </span>
+                                )}
+                                {typeFilter !== 'ALL' && (
+                                    <span className="text-[9px] md:text-xs px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full">
+                                        Tipo: {typeFilter === CategoryType.EXPENSE ? 'Despesa' : 'Receita'}
+                                    </span>
+                                )}
+                                {searchTerm && (
+                                    <span className="text-[9px] md:text-xs px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full">
+                                        Busca: {searchTerm}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Desktop Table View */}

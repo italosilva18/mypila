@@ -12,15 +12,23 @@ export const Reports: React.FC = () => {
 
     const [statusFilter, setStatusFilter] = useState<'ALL' | Status>('ALL');
     const [monthFilter, setMonthFilter] = useState<string>('ALL');
+    const [yearFilter, setYearFilter] = useState<number | 'ALL'>('ALL');
     const [copied, setCopied] = useState(false);
+
+    // Get available years from transactions
+    const availableYears = useMemo(() => {
+        const years = [...new Set(transactions.map(t => t.year))].sort((a, b) => b - a);
+        return years;
+    }, [transactions]);
 
     const filteredTransactions = useMemo(() => {
         return transactions.filter(t => {
             const statusMatch = statusFilter === 'ALL' || t.status === statusFilter;
             const monthMatch = monthFilter === 'ALL' || t.month === monthFilter;
-            return statusMatch && monthMatch;
+            const yearMatch = yearFilter === 'ALL' || t.year === yearFilter;
+            return statusMatch && monthMatch && yearMatch;
         });
-    }, [transactions, statusFilter, monthFilter]);
+    }, [transactions, statusFilter, monthFilter, yearFilter]);
 
     const totalValue = useMemo(() => {
         return filteredTransactions.reduce((acc, t) => acc + t.amount, 0);
@@ -42,10 +50,11 @@ export const Reports: React.FC = () => {
         const date = new Date().toLocaleDateString('pt-BR');
         const filterText = statusFilter === 'ALL' ? 'Todos' : statusFilter === Status.PAID ? 'Pagos' : 'Em Aberto';
         const monthText = monthFilter === 'ALL' ? 'Todos os meses' : monthFilter;
+        const yearText = yearFilter === 'ALL' ? 'Todos os anos' : yearFilter.toString();
 
         let report = `*RELATORIO FINANCEIRO*\n`;
         report += `_${date}_\n\n`;
-        report += `*Filtros:* ${filterText} | ${monthText}\n`;
+        report += `*Filtros:* ${filterText} | ${monthText} | ${yearText}\n`;
         report += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
         // Summary
@@ -153,7 +162,7 @@ export const Reports: React.FC = () => {
             </header>
 
             {/* Filters */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 no-print">
+            <div className="grid grid-cols-3 gap-2 md:gap-4 no-print">
                 <div className="card p-2.5 md:p-4">
                     <label className="block text-[9px] md:text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 md:mb-2">Status</label>
                     <div className="flex gap-1 md:gap-2">
@@ -176,6 +185,20 @@ export const Reports: React.FC = () => {
                             Pago
                         </button>
                     </div>
+                </div>
+
+                <div className="card p-2.5 md:p-4">
+                    <label className="block text-[9px] md:text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 md:mb-2">Ano</label>
+                    <select
+                        value={yearFilter}
+                        onChange={(e) => setYearFilter(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                        className="select text-xs md:text-sm py-1.5 md:py-2"
+                    >
+                        <option value="ALL">Todos</option>
+                        {availableYears.map(y => (
+                            <option key={y} value={y}>{y}</option>
+                        ))}
+                    </select>
                 </div>
 
                 <div className="card p-2.5 md:p-4">

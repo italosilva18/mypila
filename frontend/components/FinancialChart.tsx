@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -12,6 +12,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { ChevronDown } from 'lucide-react';
 import { Transaction, Status } from '../types';
 import { stringToColor } from '../utils/colors';
 
@@ -26,6 +27,18 @@ const COLORS = {
 };
 
 export const FinancialChart = React.memo<Props>(({ transactions, categories = [] }) => {
+  // Get available years from transactions
+  const availableYears = useMemo(() => {
+    const years = [...new Set(transactions.map(t => t.year))].sort((a, b) => b - a);
+    return years.length > 0 ? years : [new Date().getFullYear()];
+  }, [transactions]);
+
+  const [selectedYear, setSelectedYear] = useState(availableYears[0] || new Date().getFullYear());
+
+  // Filter transactions by selected year
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => t.year === selectedYear);
+  }, [transactions, selectedYear]);
 
   // Memoized helper to find category color - prevents recreation on every render
   const getCategoryColor = useCallback((categoryName: string) => {
@@ -35,7 +48,7 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
 
   // Aggregate data for Bar Chart (Monthly flow)
   const monthlyData = useMemo(() => {
-    const data = transactions.reduce((acc, curr) => {
+    const data = filteredTransactions.reduce((acc, curr) => {
       // Skip accumulated items like Vacation for the timeline
       if (curr.month === 'Acumulado') return acc;
 
@@ -61,11 +74,11 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
     data.sort((a, b) => (monthOrder[a.month] || 99) - (monthOrder[b.month] || 99));
 
     return data;
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   // Aggregate data for Pie Chart (Outstanding by Category)
   const openData = useMemo(() => {
-    return transactions
+    return filteredTransactions
       .filter(t => t.status === Status.OPEN)
       .reduce((acc, curr) => {
         const existing = acc.find(item => item.name === curr.category);
@@ -76,12 +89,26 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
         }
         return acc;
       }, [] as { name: string; value: number }[]);
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-6 mb-3 md:mb-8">
       <div className="bg-white/70 backdrop-blur-sm p-3 md:p-6 rounded-lg md:rounded-xl shadow-soft border border-stone-100 md:border-stone-200">
-        <h3 className="text-xs md:text-lg font-semibold text-stone-900 mb-2 md:mb-4">Fluxo Mensal</h3>
+        <div className="flex items-center justify-between mb-2 md:mb-4">
+          <h3 className="text-xs md:text-lg font-semibold text-stone-900">Fluxo Mensal</h3>
+          <div className="relative">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="appearance-none bg-stone-100 border border-stone-200 rounded-lg px-2 md:px-3 py-1 md:py-1.5 pr-6 md:pr-8 text-[10px] md:text-sm font-medium text-stone-700 cursor-pointer hover:bg-stone-200 transition-colors"
+            >
+              {availableYears.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-1.5 md:right-2 top-1/2 -translate-y-1/2 w-3 h-3 md:w-4 md:h-4 text-stone-500 pointer-events-none" />
+          </div>
+        </div>
         <div className="h-40 md:h-64">
           <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
             <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -101,7 +128,10 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
       </div>
 
       <div className="bg-white/70 backdrop-blur-sm p-3 md:p-6 rounded-lg md:rounded-xl shadow-soft border border-stone-100 md:border-stone-200">
-        <h3 className="text-xs md:text-lg font-semibold text-stone-900 mb-2 md:mb-4">Em Aberto por Categoria</h3>
+        <div className="flex items-center justify-between mb-2 md:mb-4">
+          <h3 className="text-xs md:text-lg font-semibold text-stone-900">Em Aberto por Categoria</h3>
+          <span className="text-[9px] md:text-xs px-2 py-0.5 bg-stone-100 text-stone-600 rounded-full">{selectedYear}</span>
+        </div>
         <div className="h-40 md:h-64">
           <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
             <PieChart>
