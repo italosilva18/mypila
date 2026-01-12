@@ -140,6 +140,8 @@ func main() {
 	auth.Post("/logout", handlers.Logout)
 	auth.Get("/me", middleware.Protected(), handlers.GetMe)
 	auth.Post("/logout-all", middleware.Protected(), handlers.LogoutAll)
+	auth.Post("/forgot-password", authLimiter, handlers.ForgotPassword)
+	auth.Post("/reset-password", authLimiter, handlers.ResetPassword)
 
 	// Protected routes
 	api.Use(middleware.Protected())

@@ -1,34 +1,72 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { Loader2, ArrowRight, Sparkles, Mail, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Loader2, ArrowLeft, Mail, Sparkles, CheckCircle } from 'lucide-react';
+import { api } from '../services/api';
 
-export const Login: React.FC = () => {
+export const ForgotPassword: React.FC = () => {
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { login } = useAuth();
-    const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setIsSubmitting(true);
+
         try {
-            await login({ email, password });
-            navigate('/');
-        } catch (err) {
-            setError('Credenciais invalidas. Tente novamente.');
+            await api.forgotPassword(email);
+            setSuccess(true);
+        } catch (err: any) {
+            // Always show success to prevent email enumeration
+            setSuccess(true);
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    if (success) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background py-8 px-4">
+                <div className="w-full max-w-md">
+                    <div className="text-center mb-8">
+                        <div className="inline-flex p-4 bg-gradient-primary rounded-2xl shadow-card mb-4">
+                            <Sparkles className="w-8 h-8 text-white" />
+                        </div>
+                        <h1 className="text-3xl font-bold text-foreground">
+                            MyPila<span className="text-primary-500">Pro</span>
+                        </h1>
+                    </div>
+
+                    <div className="card p-8 animate-fadeIn">
+                        <div className="text-center">
+                            <div className="inline-flex p-4 bg-green-100 rounded-full mb-4">
+                                <CheckCircle className="w-8 h-8 text-green-600" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-foreground mb-2">Email Enviado!</h2>
+                            <p className="text-muted mb-6">
+                                Se o email <strong>{email}</strong> estiver cadastrado, voce recebera um link para redefinir sua senha.
+                            </p>
+                            <p className="text-muted text-sm mb-6">
+                                Verifique sua caixa de entrada e a pasta de spam.
+                            </p>
+                            <Link
+                                to="/login"
+                                className="btn-primary inline-flex items-center gap-2"
+                            >
+                                <ArrowLeft className="w-5 h-5" />
+                                Voltar ao Login
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen flex items-center justify-center bg-background py-8 px-4">
             <div className="w-full max-w-md">
-                {/* Logo */}
                 <div className="text-center mb-8">
                     <div className="inline-flex p-4 bg-gradient-primary rounded-2xl shadow-card mb-4">
                         <Sparkles className="w-8 h-8 text-white" />
@@ -38,11 +76,10 @@ export const Login: React.FC = () => {
                     </h1>
                 </div>
 
-                {/* Login Card */}
                 <div className="card p-8 animate-fadeIn">
                     <div className="text-center mb-8">
-                        <h2 className="text-2xl font-bold text-foreground mb-2">Bem-vindo de volta</h2>
-                        <p className="text-muted">Entre para gerenciar suas financas</p>
+                        <h2 className="text-2xl font-bold text-foreground mb-2">Esqueceu a senha?</h2>
+                        <p className="text-muted">Digite seu email para recuperar sua conta</p>
                     </div>
 
                     {error && (
@@ -68,26 +105,6 @@ export const Login: React.FC = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="block text-sm font-medium text-foreground ml-1">Senha</label>
-                                <Link to="/forgot-password" className="text-sm text-primary-600 hover:text-primary-700 transition-colors">
-                                    Esqueceu a senha?
-                                </Link>
-                            </div>
-                            <div className="relative">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                                <input
-                                    type="password"
-                                    required
-                                    className="input pl-12"
-                                    placeholder="********"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
                         <button
                             type="submit"
                             disabled={isSubmitting}
@@ -96,25 +113,22 @@ export const Login: React.FC = () => {
                             {isSubmitting ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
                             ) : (
-                                <>
-                                    Entrar
-                                    <ArrowRight className="w-5 h-5" />
-                                </>
+                                'Enviar Link de Recuperacao'
                             )}
                         </button>
                     </form>
 
                     <div className="mt-8 text-center">
-                        <p className="text-muted text-sm">
-                            Nao tem uma conta?{' '}
-                            <Link to="/register" className="text-primary-600 hover:text-primary-700 font-medium transition-colors">
-                                Cadastre-se gratis
-                            </Link>
-                        </p>
+                        <Link
+                            to="/login"
+                            className="text-primary-600 hover:text-primary-700 font-medium transition-colors inline-flex items-center gap-2"
+                        >
+                            <ArrowLeft className="w-4 h-4" />
+                            Voltar ao Login
+                        </Link>
                     </div>
                 </div>
 
-                {/* Footer */}
                 <p className="text-center text-muted text-xs mt-8">
                     Gestao financeira inteligente
                 </p>

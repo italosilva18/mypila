@@ -18,6 +18,8 @@ const Quotes = React.lazy(() => import('./pages/Quotes').then(m => ({ default: m
 const QuoteComparisonPage = React.lazy(() => import('./pages/QuoteComparison').then(m => ({ default: m.QuoteComparisonPage })));
 const Login = React.lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Register = React.lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
+const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
+const ResetPassword = React.lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })));
 
 // Loading fallback component
 const PageLoader: React.FC = () => (
@@ -51,6 +53,8 @@ const AppRoutes: React.FC = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route path="/" element={
           <PrivateRoute>

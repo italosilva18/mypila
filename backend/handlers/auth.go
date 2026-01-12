@@ -19,6 +19,7 @@ import (
 	"m2m-backend/database"
 	"m2m-backend/helpers"
 	"m2m-backend/models"
+	"m2m-backend/services"
 )
 
 // JWT expiration times - shorter for production security
@@ -505,4 +506,174 @@ func CleanupExpiredTokens(ctx context.Context) (int64, error) {
 	}
 
 	return count, nil
+}
+
+// ForgotPassword handles password reset requests
+func ForgotPassword(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+	requestID := helpers.GetRequestID(c)
+
+	var req models.ForgotPasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return helpers.InvalidRequestBody(c)
+	}
+
+	// Normalize email
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Validate email
+	errors := helpers.CollectErrors(
+		helpers.ValidateEmail(req.Email),
+	)
+	if helpers.HasErrors(errors) {
+		return helpers.SendValidationErrors(c, errors)
+	}
+
+	// Check if user exists
+	var user models.User
+	err := database.QueryRow(ctx,
+		`SELECT id, name, email FROM users WHERE email = $1`,
+		req.Email).Scan(&user.ID, &user.Name, &user.Email)
+
+	// Always return success message to prevent email enumeration
+	successResponse := models.ForgotPasswordResponse{
+		Message: "Se o email estiver cadastrado, voce recebera um link para redefinir sua senha.",
+	}
+
+	if err != nil {
+		logSecurityEvent("FORGOT_PASSWORD", req.Email, ip, userAgent, "user_not_found", requestID)
+		return c.JSON(successResponse)
+	}
+
+	// Generate reset token
+	resetToken, err := generateSecureToken()
+	if err != nil {
+		logSecurityEvent("FORGOT_PASSWORD", req.Email, ip, userAgent, "token_generation_failed", requestID)
+		return helpers.InternalError(c, helpers.ErrCodeInternalError, "Falha ao gerar token", err, nil)
+	}
+
+	tokenHash := hashToken(resetToken)
+	tokenID := uuid.New()
+	expiresAt := time.Now().Add(1 * time.Hour) // Token expires in 1 hour
+
+	// Delete any existing reset tokens for this user
+	_, _ = database.Pool.Exec(ctx,
+		`DELETE FROM password_reset_tokens WHERE user_id = $1`,
+		user.ID)
+
+	// Store the reset token
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		tokenID, user.ID, tokenHash, expiresAt, false, time.Now())
+	if err != nil {
+		logSecurityEvent("FORGOT_PASSWORD", req.Email, ip, userAgent, "db_error", requestID)
+		return helpers.DatabaseError(c, "create_reset_token", err)
+	}
+
+	// Send email
+	emailService := services.NewEmailService()
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:8007"
+	}
+
+	err = emailService.SendPasswordResetEmail(user.Email, user.Name, resetToken, frontendURL)
+	if err != nil {
+		log.Printf("[ERROR] Failed to send password reset email: %v", err)
+		logSecurityEvent("FORGOT_PASSWORD", req.Email, ip, userAgent, "email_send_failed", requestID)
+		// Still return success to prevent email enumeration
+		return c.JSON(successResponse)
+	}
+
+	logSecurityEvent("FORGOT_PASSWORD", req.Email, ip, userAgent, "email_sent", requestID)
+	return c.JSON(successResponse)
+}
+
+// ResetPassword handles the actual password reset
+func ResetPassword(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+	requestID := helpers.GetRequestID(c)
+
+	var req models.ResetPasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return helpers.InvalidRequestBody(c)
+	}
+
+	// Validate request
+	if req.Token == "" {
+		return helpers.BadRequest(c, helpers.ErrCodeBadRequest, "Token e obrigatorio", nil)
+	}
+
+	errors := helpers.CollectErrors(
+		helpers.ValidateMinLength(req.NewPassword, "newPassword", 6),
+		helpers.ValidateMaxLength(req.NewPassword, "newPassword", 72),
+	)
+	if helpers.HasErrors(errors) {
+		return helpers.SendValidationErrors(c, errors)
+	}
+
+	tokenHash := hashToken(req.Token)
+
+	// Find the reset token
+	var resetToken models.PasswordResetToken
+	err := database.QueryRow(ctx,
+		`SELECT id, user_id, token_hash, expires_at, used, created_at
+		 FROM password_reset_tokens WHERE token_hash = $1`,
+		tokenHash).Scan(&resetToken.ID, &resetToken.UserID, &resetToken.TokenHash,
+		&resetToken.ExpiresAt, &resetToken.Used, &resetToken.CreatedAt)
+
+	if err != nil {
+		logSecurityEvent("RESET_PASSWORD", "", ip, userAgent, "token_not_found", requestID)
+		return helpers.BadRequest(c, helpers.ErrCodeBadRequest, "Token invalido ou expirado", nil)
+	}
+
+	// Check if token is already used
+	if resetToken.Used {
+		logSecurityEvent("RESET_PASSWORD", "", ip, userAgent, "token_already_used", requestID)
+		return helpers.BadRequest(c, helpers.ErrCodeBadRequest, "Token ja foi utilizado", nil)
+	}
+
+	// Check if token is expired
+	if time.Now().After(resetToken.ExpiresAt) {
+		logSecurityEvent("RESET_PASSWORD", "", ip, userAgent, "token_expired", requestID)
+		return helpers.BadRequest(c, helpers.ErrCodeBadRequest, "Token expirado. Solicite um novo link.", nil)
+	}
+
+	// Hash the new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return helpers.InternalError(c, helpers.ErrCodeInternalError, "Falha ao processar senha", err, nil)
+	}
+
+	// Update user password
+	_, err = database.Pool.Exec(ctx,
+		`UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3`,
+		string(hash), time.Now(), resetToken.UserID)
+	if err != nil {
+		logSecurityEvent("RESET_PASSWORD", "", ip, userAgent, "db_error", requestID)
+		return helpers.DatabaseError(c, "update_password", err)
+	}
+
+	// Mark token as used
+	_, _ = database.Pool.Exec(ctx,
+		`UPDATE password_reset_tokens SET used = true WHERE id = $1`,
+		resetToken.ID)
+
+	// Revoke all refresh tokens for security
+	_, _ = revokeAllUserTokens(ctx, resetToken.UserID)
+
+	logSecurityEvent("RESET_PASSWORD", "", ip, userAgent, "success", requestID)
+
+	return c.JSON(fiber.Map{
+		"message": "Senha redefinida com sucesso! Faca login com sua nova senha.",
+	})
 }

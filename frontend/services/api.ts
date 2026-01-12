@@ -173,6 +173,22 @@ class ApiService {
     return this.request<{ user: { id: string; name: string; email: string } }>('/auth/me');
   }
 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      timeout: TIMEOUT_CONFIG.auth,
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+      timeout: TIMEOUT_CONFIG.auth,
+    });
+  }
+
   // Categories
   async getCategories(companyId: string): Promise<Category[]> {
     return this.request<Category[]>(`/categories?companyId=${companyId}`);
