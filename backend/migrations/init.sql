@@ -21,11 +21,22 @@ CREATE TABLE IF NOT EXISTS companies (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
+    cnpj VARCHAR(20),
+    legal_name VARCHAR(255),
+    trade_name VARCHAR(255),
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(2),
+    zip_code VARCHAR(10),
+    logo_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_companies_user_id ON companies(user_id);
+CREATE INDEX idx_companies_cnpj ON companies(cnpj);
 
 -- Categories table
 CREATE TABLE IF NOT EXISTS categories (
@@ -191,5 +202,23 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'due_day') THEN
         ALTER TABLE transactions ADD COLUMN due_day INTEGER DEFAULT 1 CHECK (due_day >= 1 AND due_day <= 31);
         CREATE INDEX IF NOT EXISTS idx_transactions_due_day ON transactions(due_day);
+    END IF;
+END $$;
+
+-- Migration: Add company profile columns (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'cnpj') THEN
+        ALTER TABLE companies ADD COLUMN cnpj VARCHAR(20);
+        ALTER TABLE companies ADD COLUMN legal_name VARCHAR(255);
+        ALTER TABLE companies ADD COLUMN trade_name VARCHAR(255);
+        ALTER TABLE companies ADD COLUMN email VARCHAR(255);
+        ALTER TABLE companies ADD COLUMN phone VARCHAR(50);
+        ALTER TABLE companies ADD COLUMN address TEXT;
+        ALTER TABLE companies ADD COLUMN city VARCHAR(100);
+        ALTER TABLE companies ADD COLUMN state VARCHAR(2);
+        ALTER TABLE companies ADD COLUMN zip_code VARCHAR(10);
+        ALTER TABLE companies ADD COLUMN logo_url TEXT;
+        CREATE INDEX IF NOT EXISTS idx_companies_cnpj ON companies(cnpj);
     END IF;
 END $$;

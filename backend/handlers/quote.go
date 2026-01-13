@@ -737,3 +737,89 @@ func GetQuoteComparison(c *fiber.Ctx) error {
 
 	return c.JSON(comparison)
 }
+
+// GenerateTransactionFromQuote creates an income transaction from an approved quote
+func GenerateTransactionFromQuote(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	id := c.Params("id")
+	quoteID, err := uuid.Parse(id)
+	if err != nil {
+		return helpers.InvalidIDFormat(c, "id")
+	}
+
+	// Validate ownership
+	quote, err := helpers.ValidateQuoteOwnership(c, quoteID)
+	if err != nil {
+		return err
+	}
+
+	// Verify quote is approved
+	if quote.Status != models.QuoteApproved {
+		return helpers.BadRequest(c, "INVALID_STATUS", "Apenas orcamentos aprovados podem gerar receita", helpers.ErrorDetails{
+			"currentStatus":  string(quote.Status),
+			"requiredStatus": string(models.QuoteApproved),
+		})
+	}
+
+	// Find an income category for this company, or use "Servicos" as description
+	var categoryName string
+	err = database.QueryRow(ctx,
+		`SELECT name FROM categories WHERE company_id = $1 AND type = 'INCOME' ORDER BY created_at LIMIT 1`,
+		quote.CompanyID).Scan(&categoryName)
+	if err != nil {
+		categoryName = "Servicos" // Default category name if none exists
+	}
+
+	// Create the transaction
+	now := time.Now()
+	transactionID := uuid.New()
+	month := getMonthName(now.Month())
+	year := now.Year()
+	dueDay := now.Day()
+	description := fmt.Sprintf("Orcamento %s - %s", quote.Number, quote.Title)
+
+	_, err = database.Pool.Exec(ctx,
+		`INSERT INTO transactions (id, company_id, category, description, amount, month, year, due_day, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		transactionID, quote.CompanyID, categoryName, description, quote.Total, month, year, dueDay, "ABERTO", now, now)
+	if err != nil {
+		return helpers.TransactionCreateFailed(c, err)
+	}
+
+	// Update quote status to EXECUTED
+	_, err = database.Pool.Exec(ctx,
+		`UPDATE quotes SET status = $1, updated_at = $2 WHERE id = $3`,
+		models.QuoteExecuted, now, quoteID)
+	if err != nil {
+		// Transaction was created, just log the error
+		fmt.Printf("Failed to update quote status: %v\n", err)
+	}
+
+	// Return the created transaction
+	transaction := models.Transaction{
+		ID:          transactionID,
+		CompanyID:   quote.CompanyID,
+		Category:    categoryName,
+		Description: description,
+		Amount:      quote.Total,
+		Month:       month,
+		Year:        year,
+		DueDay:      dueDay,
+		Status:      models.StatusOpen,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	return c.Status(201).JSON(transaction)
+}
+
+// getMonthName returns Portuguese month name
+func getMonthName(month time.Month) string {
+	months := []string{
+		"Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+		"Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+	}
+	return months[month-1]
+}

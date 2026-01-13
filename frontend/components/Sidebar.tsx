@@ -1,9 +1,13 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw, ClipboardList, Sparkles } from 'lucide-react';
+import { Wallet, LogOut, Tags, FileText, ArrowLeft, RefreshCw, ClipboardList, Sparkles, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+    onSettingsClick?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onSettingsClick }) => {
     const { logout, user } = useAuth();
     const navigate = useNavigate();
 
@@ -89,6 +93,22 @@ export const Sidebar: React.FC = () => {
                         <ClipboardList className="w-5 h-5" />
                         <span>Orcamentos</span>
                     </NavLink>
+
+                    {onSettingsClick && (
+                        <>
+                            <div className="pt-4 pb-2">
+                                <p className="px-4 text-xs font-semibold text-muted uppercase tracking-wider">Configuracoes</p>
+                            </div>
+
+                            <button
+                                onClick={onSettingsClick}
+                                className="nav-item w-full text-left"
+                            >
+                                <Settings className="w-5 h-5" />
+                                <span>Perfil da Empresa</span>
+                            </button>
+                        </>
+                    )}
                 </nav>
             </div>
 

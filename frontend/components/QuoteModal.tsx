@@ -8,6 +8,19 @@ import { validateRequired, validateMaxLength, validatePositiveNumber, combineVal
 import { ErrorMessage } from './ErrorMessage';
 import { formatCurrency } from '../utils/currency';
 
+// Fallback UUID generator for browsers that don't support crypto.randomUUID
+const generateUUID = (): string => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return generateUUID();
+    }
+    // Fallback implementation
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
+
 interface QuoteItemForm {
     id: string;
     description: string;
@@ -69,7 +82,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
             setTitle(quote.title);
             setDescription(quote.description || '');
             setItems(quote.items.map(item => ({
-                id: item.id || crypto.randomUUID(),
+                id: item.id || generateUUID(),
                 description: item.description,
                 quantity: item.quantity.toString(),
                 unitPrice: item.unitPrice.toString(),
@@ -95,7 +108,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
         setClientZipCode('');
         setTitle('');
         setDescription('');
-        setItems([{ id: crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
+        setItems([{ id: generateUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
         setDiscount('0');
         setDiscountType('VALUE');
         const defaultDate = new Date();
@@ -106,7 +119,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
     }, [clearAllErrors]);
 
     const addItem = useCallback(() => {
-        setItems(prev => [...prev, { id: crypto.randomUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
+        setItems(prev => [...prev, { id: generateUUID(), description: '', quantity: '1', unitPrice: '', categoryId: '' }]);
     }, []);
 
     const removeItem = useCallback((id: string) => {

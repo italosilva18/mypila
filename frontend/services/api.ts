@@ -1,4 +1,4 @@
-import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus, PaginationInfo, UpcomingResponse } from '../types';
+import { Transaction, Company, AuthResponse, LoginRequest, RegisterRequest, Category, RecurringTransaction, Quote, CreateQuoteRequest, QuoteTemplate, CreateQuoteTemplateRequest, QuoteComparison, QuoteStatus, PaginationInfo, UpcomingResponse, CNPJData, UpdateCompanyRequest } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081/api';
 
@@ -245,10 +245,10 @@ class ApiService {
     });
   }
 
-  async updateCompany(id: string, name: string): Promise<Company> {
+  async updateCompany(id: string, data: UpdateCompanyRequest): Promise<Company> {
     return this.request<Company>(`/companies/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(data),
     });
   }
 
@@ -256,6 +256,12 @@ class ApiService {
     return this.request(`/companies/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // CNPJ Lookup
+  async lookupCNPJ(cnpj: string): Promise<CNPJData> {
+    const cleanCNPJ = cnpj.replace(/[^\d]/g, '');
+    return this.request<CNPJData>(`/cnpj/${cleanCNPJ}`);
   }
 
   // Transactions
@@ -426,6 +432,12 @@ class ApiService {
 
   async getQuoteComparison(id: string): Promise<QuoteComparison> {
     return this.request<QuoteComparison>(`/quotes/${id}/comparison`);
+  }
+
+  async generateTransactionFromQuote(id: string): Promise<Transaction> {
+    return this.request<Transaction>(`/quotes/${id}/generate-transaction`, {
+      method: 'POST',
+    });
   }
 
   // ===== Quote Templates =====

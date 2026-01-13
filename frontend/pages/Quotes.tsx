@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Quote, QuoteStatus, Category } from '../types';
 import {
     Plus, Trash2, FileText, Loader2, Edit2, Copy, Download,
-    Eye, Send, CheckCircle, XCircle, Play, Filter, Search
+    Eye, Send, CheckCircle, XCircle, Play, Filter, Search, DollarSign
 } from 'lucide-react';
 import { QuoteModal } from '../components/QuoteModal';
 import { useToast } from '../contexts/ToastContext';
@@ -167,6 +167,19 @@ export const Quotes: React.FC = () => {
         navigate(`/company/${companyId}/quotes/${quoteId}/comparison`);
     };
 
+    const handleGenerateTransaction = useCallback(async (quote: Quote) => {
+        if (!confirm(`Deseja gerar uma receita de ${formatCurrency(quote.total)} a partir do orçamento ${quote.number}?`)) return;
+        try {
+            await api.generateTransactionFromQuote(quote.id);
+            // Atualiza o status do orçamento para EXECUTED
+            setQuotes(prev => prev.map(q => q.id === quote.id ? { ...q, status: QuoteStatus.EXECUTED } : q));
+            addToast('success', 'Receita gerada com sucesso! Verifique no Dashboard.');
+        } catch (err) {
+            addToast('error', 'Erro ao gerar receita');
+            console.error('Failed to generate transaction', err);
+        }
+    }, [addToast]);
+
     const filteredQuotes = quotes.filter(quote => {
         const matchesStatus = !filterStatus || quote.status === filterStatus;
         const matchesSearch = !searchTerm ||
@@ -297,6 +310,15 @@ export const Quotes: React.FC = () => {
                                                 >
                                                     <Download className="w-4 h-4" />
                                                 </button>
+                                                {quote.status === QuoteStatus.APPROVED && (
+                                                    <button
+                                                        onClick={() => handleGenerateTransaction(quote)}
+                                                        className="p-2 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                        title="Gerar Receita"
+                                                    >
+                                                        <DollarSign className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {quote.status === QuoteStatus.EXECUTED && (
                                                     <button
                                                         onClick={() => handleViewComparison(quote.id)}
@@ -354,6 +376,15 @@ export const Quotes: React.FC = () => {
                                         <Download className="w-3.5 h-3.5" />
                                         PDF
                                     </button>
+                                    {quote.status === QuoteStatus.APPROVED && (
+                                        <button
+                                            onClick={() => handleGenerateTransaction(quote)}
+                                            className="p-2 text-emerald-600 bg-emerald-50 rounded-lg"
+                                            title="Gerar Receita"
+                                        >
+                                            <DollarSign className="w-4 h-4" />
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleDelete(quote.id)}
                                         className="p-2 text-red-600 bg-red-50 rounded-lg"

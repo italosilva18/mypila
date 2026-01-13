@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -61,11 +64,15 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 
 	// Buscar empresa para dados do cabeçalho
 	var company models.Company
+	var logoURL *string
 	err = database.QueryRow(ctx,
-		`SELECT id, user_id, name, created_at, updated_at FROM companies WHERE id = $1`,
-		quote.CompanyID).Scan(&company.ID, &company.UserID, &company.Name, &company.CreatedAt, &company.UpdatedAt)
+		`SELECT id, user_id, name, logo_url, created_at, updated_at FROM companies WHERE id = $1`,
+		quote.CompanyID).Scan(&company.ID, &company.UserID, &company.Name, &logoURL, &company.CreatedAt, &company.UpdatedAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao buscar dados da empresa"})
+	}
+	if logoURL != nil {
+		company.LogoURL = *logoURL
 	}
 
 	// Criar PDF
@@ -86,13 +93,32 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 	pdf.SetFillColor(r, g, b)
 	pdf.Rect(0, 0, 210, 35, "F")
 
+	// Posição X para o nome da empresa (ajustada se tiver logo)
+	nameX := 15.0
+
+	// Adicionar logo se existir
+	if company.LogoURL != "" {
+		logoData, logoType := downloadImage(company.LogoURL)
+		if logoData != nil && logoType != "" {
+			// Registrar a imagem no PDF
+			pdf.RegisterImageOptionsReader(
+				"company_logo",
+				fpdf.ImageOptions{ImageType: logoType, ReadDpi: true},
+				bytes.NewReader(logoData),
+			)
+			// Adicionar logo (25x25mm no canto superior esquerdo)
+			pdf.ImageOptions("company_logo", 15, 5, 25, 25, false, fpdf.ImageOptions{}, 0, "")
+			nameX = 45.0 // Mover nome para direita da logo
+		}
+	}
+
 	pdf.SetTextColor(255, 255, 255)
 	pdf.SetFont("Arial", "B", 20)
-	pdf.SetXY(15, 12)
+	pdf.SetXY(nameX, 12)
 	pdf.Cell(0, 10, company.Name)
 
 	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(15, 22)
+	pdf.SetXY(nameX, 22)
 	if template != nil && template.HeaderText != "" {
 		pdf.Cell(0, 5, template.HeaderText)
 	}
@@ -318,4 +344,56 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// downloadImage baixa uma imagem de URL e retorna os bytes e o tipo
+func downloadImage(url string) ([]byte, string) {
+	if url == "" {
+		return nil, ""
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, ""
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, ""
+	}
+
+	// Detectar tipo de imagem
+	contentType := resp.Header.Get("Content-Type")
+	var imageType string
+	switch {
+	case strings.Contains(contentType, "png"):
+		imageType = "PNG"
+	case strings.Contains(contentType, "jpeg"), strings.Contains(contentType, "jpg"):
+		imageType = "JPEG"
+	case strings.Contains(contentType, "gif"):
+		imageType = "GIF"
+	default:
+		// Tentar detectar pelo magic number
+		if len(data) > 8 {
+			if data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
+				imageType = "PNG"
+			} else if data[0] == 0xFF && data[1] == 0xD8 {
+				imageType = "JPEG"
+			} else if data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 {
+				imageType = "GIF"
+			}
+		}
+	}
+
+	if imageType == "" {
+		return nil, ""
+	}
+
+	return data, imageType
 }

@@ -49,7 +49,47 @@ export interface Company {
   id: string;
   userId: string;
   name: string;
+  cnpj?: string;
+  legalName?: string;
+  tradeName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  logoUrl?: string;
   createdAt: string;
+}
+
+export interface CNPJData {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  municipio: string;
+  uf: string;
+  cep: string;
+  telefone: string;
+  situacao: string;
+  atividade: string;
+}
+
+export interface UpdateCompanyRequest {
+  name?: string;
+  cnpj?: string;
+  legalName?: string;
+  tradeName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  logoUrl?: string;
 }
 
 export interface User {

@@ -153,6 +153,9 @@ func main() {
 	companies.Put("/:id", handlers.UpdateCompany)
 	companies.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteCompany)
 
+	// CNPJ lookup route
+	api.Get("/cnpj/:cnpj", middleware.ModerateLimiter(), handlers.LookupCNPJ)
+
 	// Transactions routes
 	transactions := api.Group("/transactions")
 	transactions.Get("/", handlers.GetAllTransactions)
@@ -191,6 +194,7 @@ func main() {
 	quotes.Patch("/:id/status", handlers.UpdateQuoteStatus)
 	quotes.Get("/:id/pdf", middleware.HeavyOperationLimiter(), handlers.GenerateQuotePDF)
 	quotes.Get("/:id/comparison", handlers.GetQuoteComparison)
+	quotes.Post("/:id/generate-transaction", middleware.ModerateLimiter(), handlers.GenerateTransactionFromQuote)
 
 	// Quote Template routes
 	quoteTemplates := api.Group("/quote-templates")

@@ -96,7 +96,7 @@ export const CompanyList: React.FC = () => {
         if (!editingCompany) return;
 
         try {
-            const updatedCompany = await api.updateCompany(editingCompany.id, name);
+            const updatedCompany = await api.updateCompany(editingCompany.id, { name });
             setCompanies(companies.map(c => c.id === updatedCompany.id ? updatedCompany : c));
             addToast('success', 'Ambiente atualizado com sucesso!');
             setIsModalOpen(false);
