@@ -58,11 +58,19 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
         }
     }, [company, isOpen, clearAllErrors]);
 
-    const formatCNPJ = (value: string): string => {
+    // Formata CPF (11 digitos) ou CNPJ (14 digitos)
+    const formatCPFCNPJ = (value: string): string => {
         const digits = value.replace(/\D/g, '').slice(0, 14);
-        if (digits.length <= 2) return digits;
-        if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-        if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+
+        // CPF: 000.000.000-00 (11 digitos)
+        if (digits.length <= 11) {
+            if (digits.length <= 3) return digits;
+            if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+            if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+            return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+        }
+
+        // CNPJ: 00.000.000/0000-00 (14 digitos)
         if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
         return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
     };
@@ -82,7 +90,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
     };
 
     const handleCNPJChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setCnpj(formatCNPJ(e.target.value));
+        setCnpj(formatCPFCNPJ(e.target.value));
     };
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,12 +176,12 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
             };
 
             const updated = await api.updateCompany(company.id, data);
-            addToast('success', 'Perfil da empresa atualizado com sucesso!');
+            addToast('success', 'Perfil atualizado com sucesso!');
             onSave(updated);
             onClose();
         } catch (err) {
             console.error('Failed to update company:', err);
-            addToast('error', 'Erro ao atualizar perfil da empresa');
+            addToast('error', 'Erro ao atualizar perfil');
         } finally {
             setIsSubmitting(false);
         }
@@ -198,7 +206,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                             <Building2 className="w-5 h-5 text-stone-600" />
                         </div>
                         <h3 id="company-profile-title" className="text-lg md:text-xl font-bold text-stone-900">
-                            Perfil da Empresa
+                            Perfil
                         </h3>
                     </div>
                     <button
@@ -220,7 +228,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                                 {logoUrl ? (
                                     <img
                                         src={logoUrl}
-                                        alt="Logo da empresa"
+                                        alt="Logo"
                                         className="w-full h-full object-contain"
                                         onError={(e) => {
                                             (e.target as HTMLImageElement).style.display = 'none';
@@ -252,7 +260,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="md:col-span-2">
                                 <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
-                                    Nome da Empresa <span className="text-red-500">*</span>
+                                    Nome <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="text"
@@ -266,14 +274,14 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
 
                             <div className="md:col-span-2">
                                 <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
-                                    CNPJ
+                                    CPF/CNPJ
                                 </label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         value={cnpj}
                                         onChange={handleCNPJChange}
-                                        placeholder="00.000.000/0000-00"
+                                        placeholder="000.000.000-00 ou 00.000.000/0000-00"
                                         className="flex-1 px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
                                     />
                                     <button
@@ -290,7 +298,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                                         <span className="hidden md:inline">Buscar</span>
                                     </button>
                                 </div>
-                                <p className="text-xs text-stone-500 mt-1">Digite o CNPJ e clique em Buscar para preencher automaticamente</p>
+                                <p className="text-xs text-stone-500 mt-1">Digite o CNPJ (14 digitos) e clique em Buscar para preencher automaticamente</p>
                             </div>
 
                             <div>
@@ -333,7 +341,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="contato@empresa.com"
+                                    placeholder="email@exemplo.com"
                                     className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
                                 />
                             </div>

@@ -105,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSettingsClick }) => {
                                 className="nav-item w-full text-left"
                             >
                                 <Settings className="w-5 h-5" />
-                                <span>Perfil da Empresa</span>
+                                <span>Perfil</span>
                             </button>
                         </>
                     )}
