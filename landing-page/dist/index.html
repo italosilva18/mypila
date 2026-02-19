@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyPila — Gestão Financeira Empresarial</title>
+  <meta name="description" content="Sistema completo de gestão financeira empresarial.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Courier Prime', monospace;
+      background: #ffffff;
+      color: #1a1a1a;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    
+    .font-sans { font-family: 'Inter', sans-serif; }
+    
+    /* Elegant thin lines */
+    .line-elegant {
+      height: 1px;
+      background: #1a1a1a;
+    }
+    
+    .line-thin {
+      height: 0.5px;
+      background: #d4d4d4;
+    }
+    
+    /* Clean cards with borders */
+    .card-elegant {
+      border: 0.5px solid #e5e5e5;
+      transition: all 0.3s ease;
+    }
+    
+    .card-elegant:hover {
+      border-color: #1a1a1a;
+    }
+    
+    /* Primary button - black */
+    .btn-primary {
+      background: #1a1a1a;
+      color: #ffffff;
+      border: 0.5px solid #1a1a1a;
+      transition: all 0.3s ease;
+    }
+    
+    .btn-primary:hover {
+      background: #ffffff;
+      color: #1a1a1a;
+    }
+    
+    /* Secondary button - outline */
+    .btn-secondary {
+      background: transparent;
+      color: #1a1a1a;
+      border: 0.5px solid #1a1a1a;
+      transition: all 0.3s ease;
+    }
+    
+    .btn-secondary:hover {
+      background: #1a1a1a;
+      color: #ffffff;
+    }
+    
+    /* Navigation */
+    .nav-elegant {
+      border-bottom: 0.5px solid #e5e5e5;
+    }
+    
+    /* Section divider */
+    .section-divider {
+      border-top: 0.5px solid #e5e5e5;
+    }
+    
+    /* Subtle hover effect */
+    .hover-lift {
+      transition: transform 0.3s ease;
+    }
+    
+    .hover-lift:hover {
+      transform: translateY(-4px);
+    }
+    
+    /* Monospace numbers */
+    .mono-num {
+      font-family: 'Courier Prime', monospace;
+      letter-spacing: -0.02em;
+    }
+    
+    /* Smooth scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #ffffff; }
+    ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
+    
+    /* Letter spacing for elegance */
+    .tracking-elegant {
+      letter-spacing: 0.1em;
+    }
+    
+    .tracking-wide-elegant {
+      letter-spacing: 0.2em;
+    }
+    
+    /* Animation */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    
+    /* Grid lines background */
+    .bg-grid-subtle {
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+      background-size: 80px 80px;
+    }
+  </style>
+</head>
+<body class="antialiased bg-white">
+  
+  <!-- Navigation -->
+  <nav class="nav-elegant fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="flex items-center justify-between h-20">
+        <a href="/" class="flex items-center gap-4">
+          <div class="w-10 h-10 border border-black flex items-center justify-center">
+            <i data-lucide="wallet" class="w-5 h-5"></i>
+          </div>
+          <span class="text-lg tracking-elegant">MYPILA</span>
+        </a>
+        
+        <div class="hidden md:flex items-center gap-12">
+          <a href="#recursos" class="text-sm tracking-elegant hover:opacity-60 transition-opacity">RECURSOS</a>
+          <a href="#como-funciona" class="text-sm tracking-elegant hover:opacity-60 transition-opacity">COMO FUNCIONA</a>
+          <a href="#beneficios" class="text-sm tracking-elegant hover:opacity-60 transition-opacity">BENEFICIOS</a>
+        </div>
+        
+        <div class="flex items-center gap-6">
+          <a href="/login" class="text-sm tracking-elegant hover:opacity-60 transition-opacity hidden sm:block">ENTRAR</a>
+          <a href="/login" class="btn-primary px-6 py-3 text-sm tracking-elegant">COMECAR</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="pt-32 pb-24 bg-grid-subtle">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="max-w-4xl">
+        <div class="mb-12">
+          <span class="text-xs tracking-wide-elegant text-gray-500 fade-in">SISTEMA DE GESTAO FINANCEIRA</span>
+        </div>
+        
+        <h1 class="text-4xl sm:text-5xl lg:text-6xl font-normal leading-tight mb-8 fade-in">
+          Gestao financeira<br>
+          empresarial<br>
+          <span class="text-gray-400">simplificada.</span>
+        </h1>
+        
+        <div class="line-elegant w-24 mb-8 fade-in"></div>
+        
+        <p class="text-lg text-gray-600 max-w-xl mb-12 leading-relaxed fade-in font-sans">
+          Controle receitas, despesas e fluxo de caixa da sua empresa em uma plataforma unica, 
+          intuitiva e poderosa.
+        </p>
+        
+        <div class="flex flex-col sm:flex-row items-start gap-4 fade-in">
+          <a href="/login" class="btn-primary px-8 py-4 text-sm tracking-elegant inline-flex items-center gap-3">
+            CRIAR CONTA GRATIS
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </a>
+          <a href="/login" class="btn-secondary px-8 py-4 text-sm tracking-elegant inline-flex items-center gap-3">
+            <i data-lucide="play" class="w-4 h-4"></i>
+            VER DEMONSTRACAO
+          </a>
+        </div>
+        
+        <div class="mt-16 pt-8 border-t border-gray-200 flex flex-wrap items-center gap-8 text-xs tracking-elegant text-gray-500 fade-in font-sans">
+          <span>GRATUITO PARA COMECAR</span>
+          <span class="w-1 h-1 bg-gray-300 rounded-full"></span>
+          <span>SEM CARTAO DE CREDITO</span>
+          <span class="w-1 h-1 bg-gray-300 rounded-full"></span>
+          <span>DADOS CRIPTOGRAFADOS</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats Section -->
+  <section class="section-divider py-20">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-200">
+        <div class="bg-white p-10 text-center card-elegant">
+          <div class="mono-num text-3xl mb-2">RS 10M+</div>
+          <div class="text-xs tracking-elegant text-gray-500 font-sans">TRANSACOES GERENCIADAS</div>
+        </div>
+        <div class="bg-white p-10 text-center card-elegant">
+          <div class="mono-num text-3xl mb-2">500+</div>
+          <div class="text-xs tracking-elegant text-gray-500 font-sans">EMPRESAS CADASTRADAS</div>
+        </div>
+        <div class="bg-white p-10 text-center card-elegant">
+          <div class="mono-num text-3xl mb-2">2.000+</div>
+          <div class="text-xs tracking-elegant text-gray-500 font-sans">USUARIOS ATIVOS</div>
+        </div>
+        <div class="bg-white p-10 text-center card-elegant">
+          <div class="mono-num text-3xl mb-2">99.9%</div>
+          <div class="text-xs tracking-elegant text-gray-500 font-sans">UPTIME GARANTIDO</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="recursos" class="section-divider py-24">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="mb-20">
+        <span class="text-xs tracking-wide-elegant text-gray-500 font-sans">RECURSOS</span>
+        <h2 class="text-3xl sm:text-4xl font-normal mt-4 mb-6">
+          Tudo que voce precisa.
+        </h2>
+        <div class="line-thin w-16"></div>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Feature 1 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="wallet" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">CONTROLE FINANCEIRO</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Gerencie receitas e despesas em um so lugar. Visualize seu fluxo de caixa em tempo real.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="building-2" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">MULTI-EMPRESAS</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Cadastre e gerencie multiplas empresas com controle individualizado de cada uma.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">RELATORIOS</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Graficos e relatorios automaticos para acompanhar a saude financeira do seu negocio.
+          </p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="receipt" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">TRANSACOES</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Registre e categorize todas as movimentacoes financeiras da sua empresa.
+          </p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="shield" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">SEGURANCA</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Seus dados protegidos com criptografia e autenticacao segura.
+          </p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="card-elegant p-8 hover-lift">
+          <div class="w-12 h-12 border border-black flex items-center justify-center mb-6">
+            <i data-lucide="zap" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-lg mb-3 tracking-elegant">AUTOMACAO</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Lembretes automaticos de pagamento e notificacoes importantes.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="como-funciona" class="section-divider py-24 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="mb-20">
+        <span class="text-xs tracking-wide-elegant text-gray-500 font-sans">COMO FUNCIONA</span>
+        <h2 class="text-3xl sm:text-4xl font-normal mt-4 mb-6">
+          Tres passos simples.
+        </h2>
+        <div class="line-thin w-16"></div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="relative">
+          <div class="mono-num text-6xl text-gray-200 mb-6">01</div>
+          <h3 class="text-xl mb-4 tracking-elegant">CRIE SUA CONTA</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Cadastre-se gratuitamente em menos de 2 minutos. Nao precisa de cartao de credito.
+          </p>
+        </div>
+
+        <div class="relative">
+          <div class="mono-num text-6xl text-gray-200 mb-6">02</div>
+          <h3 class="text-xl mb-4 tracking-elegant">CADASTRE EMPRESA</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Adicione sua empresa e configure as informacoes basicas de forma simples.
+          </p>
+        </div>
+
+        <div class="relative">
+          <div class="mono-num text-6xl text-gray-200 mb-6">03</div>
+          <h3 class="text-xl mb-4 tracking-elegant">CONTROLE TUDO</h3>
+          <p class="text-sm text-gray-600 leading-relaxed font-sans">
+            Registre receitas e despesas, visualize relatorios e tenha total controle.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Benefits -->
+  <section id="beneficios" class="section-divider py-24">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="grid lg:grid-cols-2 gap-20">
+        <div>
+          <span class="text-xs tracking-wide-elegant text-gray-500 font-sans">BENEFICIOS</span>
+          <h2 class="text-3xl sm:text-4xl font-normal mt-4 mb-8">
+            Por que escolher<br>o MyPila?
+          </h2>
+          <p class="text-gray-600 mb-10 leading-relaxed font-sans">
+            Milhares de empresarios ja descobriram como e facil manter as financas organizadas.
+          </p>
+          <a href="/login" class="btn-primary px-8 py-4 text-sm tracking-elegant inline-flex items-center gap-3">
+            COMECAR AGORA
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </a>
+        </div>
+
+        <div class="space-y-6">
+          <div class="flex items-start gap-6 pb-6 border-b border-gray-200">
+            <div class="mono-num text-2xl text-gray-300">01</div>
+            <div>
+              <h4 class="text-lg mb-2 tracking-elegant">ECONOMIZE ATE 40%</h4>
+              <p class="text-sm text-gray-600 font-sans">Reduza despesas desnecessarias com controle total.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-6 pb-6 border-b border-gray-200">
+            <div class="mono-num text-2xl text-gray-300">02</div>
+            <div>
+              <h4 class="text-lg mb-2 tracking-elegant">REDUZA O TEMPO EM 80%</h4>
+              <p class="text-sm text-gray-600 font-sans">Automatize tarefas repetitivas de gestao financeira.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-6 pb-6 border-b border-gray-200">
+            <div class="mono-num text-2xl text-gray-300">03</div>
+            <div>
+              <h4 class="text-lg mb-2 tracking-elegant">DECISOES BASEADAS EM DADOS</h4>
+              <p class="text-sm text-gray-600 font-sans">Relatorios claros para tomar melhores decisoes.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-6">
+            <div class="mono-num text-2xl text-gray-300">04</div>
+            <div>
+              <h4 class="text-lg mb-2 tracking-elegant">NUNCA ESQUECA PAGAMENTOS</h4>
+              <p class="text-sm text-gray-600 font-sans">Lembretes automaticos de contas a pagar.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="section-divider py-32 bg-gray-50">
+    <div class="max-w-3xl mx-auto px-8 text-center">
+      <span class="text-xs tracking-wide-elegant text-gray-500 font-sans">COMECAR</span>
+      <h2 class="text-3xl sm:text-4xl font-normal mt-4 mb-6">
+        Pronto para organizar<br>suas financas?
+      </h2>
+      <p class="text-gray-600 mb-12 leading-relaxed font-sans">
+        Junte-se a milhares de empresarios que ja descobriram uma forma mais simples de gerenciar o dinheiro.
+      </p>
+      <a href="/login" class="btn-primary px-10 py-5 text-sm tracking-elegant inline-flex items-center gap-3">
+        CRIAR CONTA GRATIS
+        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+      </a>
+      <p class="text-xs text-gray-400 mt-8 tracking-elegant font-sans">
+        GRATUITO PARA COMECAR • SEM CARTAO DE CREDITO
+      </p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-200 py-16">
+    <div class="max-w-6xl mx-auto px-8">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+        <div class="flex items-center gap-4">
+          <div class="w-8 h-8 border border-black flex items-center justify-center">
+            <i data-lucide="wallet" class="w-4 h-4"></i>
+          </div>
+          <span class="text-sm tracking-elegant">MYPILA</span>
+        </div>
+        
+        <p class="text-xs text-gray-500 tracking-elegant font-sans">
+          2026 MYPILA. TODOS OS DIREITOS RESERVADOS.
+        </p>
+        
+        <div class="flex items-center gap-8 text-xs tracking-elegant">
+          <a href="#" class="text-gray-500 hover:text-black transition-colors font-sans">TERMOS</a>
+          <a href="#" class="text-gray-500 hover:text-black transition-colors font-sans">PRIVACIDADE</a>
+          <a href="#" class="text-gray-500 hover:text-black transition-colors font-sans">SUPORTE</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script>
+    lucide.createIcons();
+    
+    // Simple fade in on scroll
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    };
+    
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, observerOptions);
+    
+    document.querySelectorAll('.fade-in').forEach(el => {
+      observer.observe(el);
+    });
+  </script>
+</body>
+</html>

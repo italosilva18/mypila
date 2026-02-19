@@ -114,7 +114,7 @@ services:
     networks:
       - m2m-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -138,6 +138,56 @@ services:
         max-size: "5m"
         max-file: "3"
 
+  # Admin Panel
+  admin:
+    image: mypila-admin:latest
+    container_name: mypila-admin
+    restart: unless-stopped
+    ports:
+      - "8008:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - m2m-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Landing Page (página inicial do MyPila)
+  landing-page:
+    build:
+      context: ./landing-page
+      dockerfile: Dockerfile
+    image: mypila-landing-page:latest
+    container_name: mypila-landing-page
+    restart: unless-stopped
+    ports:
+      - "8010:80"
+    networks:
+      - m2m-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 networks:
   m2m-network:
     driver: bridge
