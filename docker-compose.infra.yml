@@ -1,0 +1,356 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Banco de dados compartilhado
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_multi_django
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_change_me}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - backups:/backups
+    ports:
+      - "5432:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache compartilhado
+  redis:
+    image: redis:7-alpine
+    container_name: redis_multi_django
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_change_me}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DESTACK - Sistema Django
+  destack:
+    build:
+      context: ./destack
+      dockerfile: Dockerfile
+    container_name: destack_app
+    restart: unless-stopped
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django_secret_key_change_me}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+      - DATABASE_URL=postgresql://destack_user:destack_password_change_me@postgres:5432/destack_db
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/0
+      - REDIS_CACHE_URL=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/15
+      - SENTRY_DSN=
+    volumes:
+      - static_files:/tmp/staticfiles
+      - media_files:/tmp/mediafiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    command: >
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        python manage.py migrate &&
+        gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile - --error-logfile - core.wsgi:application
+      "
+
+
+  # FRABAFARMA - Backend Django
+  frabafarma:
+    build:
+      context: ./frabafarma
+      dockerfile: Dockerfile.prod
+    container_name: frabafarma_backend
+    restart: unless-stopped
+    environment:
+      - DJANGO_SECRET_KEY=${FRABAFARMA_SECRET_KEY:-django_secret_key_change_me}
+      - DEBUG=False
+      - ALLOWED_HOSTS=localhost,127.0.0.1,fabrafarma.com.br,www.fabrafarma.com.br
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=frabafarma_db
+      - DB_USER=frabafarma_user
+      - DB_PASSWORD=${FRABAFARMA_DB_PASSWORD:-frabafarma_password_change_me}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_change_me}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/2
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/2
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,https://fabrafarma.com.br,https://www.fabrafarma.com.br,https://admin.fabrafarma.com.br
+    volumes:
+      - frabafarma_static:/app/staticfiles
+      - frabafarma_media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: >
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        python manage.py migrate &&
+        gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile - --error-logfile - backend.wsgi:application
+      "
+
+  # FRABAFARMA - Celery Worker
+  frabafarma-celery:
+    build:
+      context: ./frabafarma
+      dockerfile: Dockerfile.prod
+    container_name: frabafarma_celery
+    restart: unless-stopped
+    environment:
+      - DJANGO_SECRET_KEY=${FRABAFARMA_SECRET_KEY:-django_secret_key_change_me}
+      - DEBUG=False
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=frabafarma_db
+      - DB_USER=frabafarma_user
+      - DB_PASSWORD=${FRABAFARMA_DB_PASSWORD:-frabafarma_password_change_me}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_change_me}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/2
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_change_me}@redis:6379/2
+    volumes:
+      - frabafarma_media:/app/media
+    depends_on:
+      - frabafarma
+      - redis
+    networks:
+      - backend
+    command: celery -A backend worker -l INFO --concurrency=2
+
+  # FRABAFARMA - Frontend Web (E-commerce)
+  frabafarma-web:
+    build:
+      context: ./frabafarma/frontend_web
+      dockerfile: Dockerfile.prod
+    container_name: frabafarma_web
+    restart: unless-stopped
+    depends_on:
+      - frabafarma
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # FRABAFARMA - Frontend Admin (Dashboard)
+  frabafarma-admin:
+    build:
+      context: ./frabafarma/frontend_admin
+      dockerfile: Dockerfile.prod
+    container_name: frabafarma_admin
+    restart: unless-stopped
+    depends_on:
+      - frabafarma
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # GISCTECH - Site Institucional (React + Vite)
+  gisctech:
+    build:
+      context: ./gisctech
+      dockerfile: Dockerfile
+    image: gisctech:latest
+    container_name: gisctech_app
+    restart: unless-stopped
+    ports:
+      - "8004:80"
+    networks:
+      - frontend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Nginx - Reverse Proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.prod
+    container_name: nginx_multi_django
+    restart: unless-stopped
+    ports:
+      # Modo DESENVOLVIMENTO - Portas específicas
+      - "${DESTACK_PORT:-8001}:8001"
+      - "${FRABAFARMA_PORT:-8003}:8003"
+      # Modo PRODUÇÃO - Portas padrão
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/sites:/etc/nginx/sites:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - static_files:/static:ro
+      - media_files:/media:ro
+      - frabafarma_static:/frabafarma_static:ro
+      - frabafarma_media:/frabafarma_media:ro
+      - /var/www/html:/var/www/html:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - destack
+      - frabafarma
+      - frabafarma-web
+      - frabafarma-admin
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Volumes persistentes
+
+  # DESTACK Scraper - EGS XML Collector
+  # DESTACK Frontend - React Application
+  destack-frontend:
+    build:
+      context: ./destack/frontend
+      dockerfile: Dockerfile.prod
+    container_name: destack_frontend_app
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://destack:8000
+    depends_on:
+      - destack
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  destack-scraper:
+    build:
+      context: ./destack/scraper
+      dockerfile: Dockerfile.prod
+    container_name: destack_scraper
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python scheduler.py' || exit 1"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    environment:
+      - EGS_BASE_URL=https://app.egssistemas.com.br
+      - EGS_LOGIN_URL=https://app.egssistemas.com.br/login
+      - EGS_USERNAME=DESTACK
+      - EGS_PASSWORD=destack123
+      - EGS_ACCESS_KEY=57226
+      - DESTACK_API_URL=http://destack:8000/api
+      - DESTACK_USERNAME=admin
+      - DESTACK_PASSWORD=admin123
+      - COLLECT_INTERVAL_MINUTES=360
+      - DAYS_LOOKBACK=7
+      - LOG_LEVEL=INFO
+      - SELENIUM_HEADLESS=true
+    volumes:
+      - destack_scraper_data:/app/data
+      - destack_scraper_logs:/app/logs
+    depends_on:
+      - destack
+    networks:
+      - backend
+      - frontend
+
+
+  # Admin Panel
+  admin:
+    image: mypila-admin:latest
+    container_name: mypila-admin
+    restart: unless-stopped
+    ports:
+      - "8008:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  static_files:
+    driver: local
+  media_files:
+    driver: local
+  frabafarma_static:
+    driver: local
+  frabafarma_media:
+    driver: local
+  gisctech_static:
+    driver: local
+  gisctech_media:
+    driver: local
+  backups:
+    driver: local
+  destack_scraper_data:
+    driver: local
+  destack_scraper_logs:
+    driver: local
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
