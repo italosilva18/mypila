@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, Save, Search, Loader2, Building2, Image } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Save, Search, Loader2, Building2, Image, Upload } from 'lucide-react';
 import { Company, UpdateCompanyRequest } from '../types';
 import { api } from '../services/api';
 import { useFormValidation } from '../hooks/useFormValidation';
@@ -33,6 +33,8 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
     const [state, setState] = useState('');
     const [zipCode, setZipCode] = useState('');
     const [logoUrl, setLogoUrl] = useState('');
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleClose = useCallback(() => {
         clearAllErrors();
@@ -99,6 +101,50 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
 
     const handleZipCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setZipCode(formatZipCode(e.target.value));
+    };
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            addToast('error', 'Por favor, selecione uma imagem');
+            return;
+        }
+
+        // Validate file size (max 500KB for base64)
+        if (file.size > 500 * 1024) {
+            addToast('error', 'Imagem muito grande. Maximo 500KB');
+            return;
+        }
+
+        setIsUploadingLogo(true);
+        try {
+            // Convert to base64
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                setLogoUrl(base64);
+                setIsUploadingLogo(false);
+                addToast('success', 'Logo carregada com sucesso!');
+            };
+            reader.onerror = () => {
+                addToast('error', 'Erro ao carregar imagem');
+                setIsUploadingLogo(false);
+            };
+            reader.readAsDataURL(file);
+        } catch {
+            addToast('error', 'Erro ao processar imagem');
+            setIsUploadingLogo(false);
+        }
+    };
+
+    const handleRemoveLogo = () => {
+        setLogoUrl('');
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     const handleSearchCNPJ = async () => {
@@ -224,7 +270,7 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                     <section>
                         <h4 className="text-sm font-semibold text-stone-700 mb-3 uppercase tracking-wide">Logo</h4>
                         <div className="flex items-start gap-4">
-                            <div className="w-20 h-20 bg-stone-100 rounded-xl border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden">
+                            <div className="w-20 h-20 bg-stone-100 rounded-xl border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative">
                                 {logoUrl ? (
                                     <img
                                         src={logoUrl}
@@ -237,19 +283,49 @@ export const CompanyProfile: React.FC<Props> = ({ isOpen, onClose, onSave, compa
                                 ) : (
                                     <Image className="w-8 h-8 text-stone-400" />
                                 )}
+                                {isUploadingLogo && (
+                                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                        <Loader2 className="w-6 h-6 animate-spin text-stone-600" />
+                                    </div>
+                                )}
                             </div>
                             <div className="flex-1">
                                 <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
-                                    URL da Logo
+                                    Logo da Empresa
                                 </label>
                                 <input
-                                    type="url"
-                                    value={logoUrl}
-                                    onChange={(e) => setLogoUrl(e.target.value)}
-                                    placeholder="https://exemplo.com/logo.png"
-                                    className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleLogoUpload}
+                                    className="hidden"
+                                    id="logo-upload"
                                 />
-                                <p className="text-xs text-stone-500 mt-1">A logo aparecera no cabecalho dos orcamentos em PDF</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isUploadingLogo}
+                                        className="flex-1 px-4 py-2.5 bg-stone-800 text-white rounded-xl hover:bg-stone-700 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        {isUploadingLogo ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <Upload className="w-4 h-4" />
+                                        )}
+                                        <span>Enviar Logo</span>
+                                    </button>
+                                    {logoUrl && (
+                                        <button
+                                            type="button"
+                                            onClick={handleRemoveLogo}
+                                            className="px-4 py-2.5 bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-xs text-stone-500 mt-1">PNG, JPG ou SVG. Maximo 500KB. Aparece nos orcamentos PDF.</p>
                             </div>
                         </div>
                     </section>

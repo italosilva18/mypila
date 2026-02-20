@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,16 +40,13 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 		return helpers.SendValidationError(c, "id", "Formato de ID invalido")
 	}
 
-	// Validate ownership e buscar orçamento
 	quote, err := helpers.ValidateQuoteOwnership(c, quoteID)
 	if err != nil {
 		return err
 	}
 
-	// Fetch items
 	quote.Items, _ = getQuoteItems(ctx, quote.ID)
 
-	// Buscar template se existir
 	var template *models.QuoteTemplate
 	if quote.TemplateID != nil {
 		var t models.QuoteTemplate
@@ -62,7 +60,6 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 		}
 	}
 
-	// Buscar empresa para dados do cabeçalho
 	var company models.Company
 	var logoURL *string
 	err = database.QueryRow(ctx,
@@ -77,323 +74,385 @@ func GenerateQuotePDF(c *fiber.Ctx) error {
 
 	// Criar PDF
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(15, 15, 15)
+	pdf.SetMargins(10, 10, 10)
+	pdf.SetAutoPageBreak(true, 15)
 	pdf.AddPage()
 
-	// Cor primária do template ou padrão
-	primaryColor := "#78716c"
+	// Cor primária
+	primaryColor := "#374151" // gray-700
 	if template != nil && template.PrimaryColor != "" {
 		primaryColor = template.PrimaryColor
 	}
-
-	// Converter hex para RGB
 	r, g, b := hexToRGB(primaryColor)
 
-	// ===== CABEÇALHO =====
+	// ========== CABEÇALHO ==========
+	headerHeight := 32.0
 	pdf.SetFillColor(r, g, b)
-	pdf.Rect(0, 0, 210, 35, "F")
+	pdf.Rect(0, 0, 210, headerHeight, "F")
 
-	// Posição X para o nome da empresa (ajustada se tiver logo)
-	nameX := 15.0
-
-	// Adicionar logo se existir
+	// Logo
+	nameX := 12.0
 	if company.LogoURL != "" {
-		logoData, logoType := downloadImage(company.LogoURL)
+		logoData, logoType := getLogoData(company.LogoURL)
 		if logoData != nil && logoType != "" {
-			// Registrar a imagem no PDF
-			pdf.RegisterImageOptionsReader(
-				"company_logo",
-				fpdf.ImageOptions{ImageType: logoType, ReadDpi: true},
-				bytes.NewReader(logoData),
-			)
-			// Adicionar logo (25x25mm no canto superior esquerdo)
-			pdf.ImageOptions("company_logo", 15, 5, 25, 25, false, fpdf.ImageOptions{}, 0, "")
-			nameX = 45.0 // Mover nome para direita da logo
+			pdf.RegisterImageOptionsReader("logo", fpdf.ImageOptions{ImageType: logoType, ReadDpi: true}, bytes.NewReader(logoData))
+			pdf.ImageOptions("logo", 10, 4, 24, 24, false, fpdf.ImageOptions{}, 0, "")
+			nameX = 38.0
 		}
 	}
 
+	// Nome da empresa
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont("Arial", "B", 20)
-	pdf.SetXY(nameX, 12)
-	pdf.Cell(0, 10, company.Name)
+	pdf.SetFont("Arial", "B", 16)
+	pdf.SetXY(nameX, 8)
+	pdf.Cell(90, 6, removeAccents(company.Name))
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(nameX, 22)
+	// Subtítulo
 	if template != nil && template.HeaderText != "" {
-		pdf.Cell(0, 5, template.HeaderText)
+		pdf.SetFont("Arial", "", 8)
+		pdf.SetXY(nameX, 16)
+		pdf.Cell(90, 5, removeAccents(template.HeaderText))
 	}
 
-	// Número do orçamento
+	// Número e datas (lado direito)
 	pdf.SetFont("Arial", "B", 12)
-	pdf.SetXY(140, 12)
-	pdf.Cell(0, 10, quote.Number)
+	pdf.SetXY(145, 6)
+	pdf.Cell(55, 6, quote.Number)
 
-	// ===== DADOS DO ORÇAMENTO =====
-	pdf.SetTextColor(0, 0, 0)
-	pdf.SetY(45)
+	pdf.SetFont("Arial", "", 8)
+	pdf.SetXY(145, 14)
+	pdf.Cell(55, 4, fmt.Sprintf("Data: %s", formatDate(quote.CreatedAt)))
+	pdf.SetXY(145, 19)
+	pdf.Cell(55, 4, fmt.Sprintf("Valido ate: %s", formatDate(quote.ValidUntil)))
 
-	// Título
-	pdf.SetFont("Arial", "B", 16)
-	pdf.Cell(0, 10, quote.Title)
-	pdf.Ln(12)
+	// ========== TÍTULO ==========
+	pdf.SetY(headerHeight + 4)
+	pdf.SetTextColor(r, g, b)
+	pdf.SetFont("Arial", "B", 13)
+	pdf.SetX(10)
+	pdf.Cell(190, 6, removeAccents(quote.Title))
 
-	// Data e Validade
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetTextColor(100, 100, 100)
-	pdf.Cell(90, 6, fmt.Sprintf("Data: %s", formatDate(quote.CreatedAt)))
-	pdf.Cell(0, 6, fmt.Sprintf("Validade: %s", formatDate(quote.ValidUntil)))
-	pdf.Ln(10)
-
-	// ===== DADOS DO CLIENTE =====
+	// ========== CLIENTE ==========
+	pdf.SetY(pdf.GetY() + 8)
 	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(15, pdf.GetY(), 180, 35, "F")
+	pdf.SetDrawColor(220, 220, 220)
 
+	// Calcular altura do box do cliente
+	clientBoxHeight := 18.0
+	if quote.ClientAddress != "" {
+		clientBoxHeight = 24.0
+	}
+
+	clientY := pdf.GetY()
+	pdf.Rect(10, clientY, 190, clientBoxHeight, "FD")
+
+	// Nome e documento na mesma linha
 	pdf.SetTextColor(0, 0, 0)
-	pdf.SetFont("Arial", "B", 11)
-	pdf.SetX(20)
-	pdf.Cell(0, 8, "Dados do Cliente")
-	pdf.Ln(8)
-
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetX(20)
-	pdf.Cell(0, 5, quote.ClientName)
-	pdf.Ln(5)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.SetXY(14, clientY+3)
+	pdf.Cell(100, 5, removeAccents(quote.ClientName))
 
 	if quote.ClientDocument != "" {
-		pdf.SetX(20)
-		pdf.Cell(0, 5, fmt.Sprintf("CPF/CNPJ: %s", quote.ClientDocument))
-		pdf.Ln(5)
+		pdf.SetFont("Arial", "", 9)
+		pdf.SetXY(130, clientY+3)
+		pdf.Cell(66, 5, quote.ClientDocument)
 	}
 
-	if quote.ClientEmail != "" || quote.ClientPhone != "" {
-		pdf.SetX(20)
-		contactInfo := ""
-		if quote.ClientEmail != "" {
-			contactInfo = quote.ClientEmail
-		}
-		if quote.ClientPhone != "" {
-			if contactInfo != "" {
-				contactInfo += " | "
-			}
-			contactInfo += quote.ClientPhone
-		}
-		pdf.Cell(0, 5, contactInfo)
-		pdf.Ln(5)
+	// Contato
+	pdf.SetFont("Arial", "", 9)
+	pdf.SetXY(14, clientY+9)
+	contact := ""
+	if quote.ClientPhone != "" {
+		contact = quote.ClientPhone
 	}
+	if quote.ClientEmail != "" {
+		if contact != "" {
+			contact += " | "
+		}
+		contact += quote.ClientEmail
+	}
+	pdf.Cell(180, 5, contact)
 
+	// Endereço
 	if quote.ClientAddress != "" {
-		pdf.SetX(20)
-		address := quote.ClientAddress
+		pdf.SetXY(14, clientY+15)
+		addr := quote.ClientAddress
 		if quote.ClientCity != "" {
-			address += " - " + quote.ClientCity
+			addr += " - " + quote.ClientCity
 		}
 		if quote.ClientState != "" {
-			address += "/" + quote.ClientState
+			addr += "/" + quote.ClientState
 		}
 		if quote.ClientZipCode != "" {
-			address += " - " + quote.ClientZipCode
+			addr += " - " + quote.ClientZipCode
 		}
-		pdf.Cell(0, 5, address)
+		pdf.Cell(180, 5, removeAccents(addr))
 	}
 
-	pdf.Ln(15)
+	pdf.SetY(clientY + clientBoxHeight + 4)
 
-	// ===== DESCRIÇÃO =====
+	// ========== DESCRIÇÃO ==========
 	if quote.Description != "" {
-		pdf.SetFont("Arial", "B", 11)
-		pdf.Cell(0, 8, "Descricao")
-		pdf.Ln(8)
-		pdf.SetFont("Arial", "", 10)
-		pdf.MultiCell(0, 5, quote.Description, "", "", false)
-		pdf.Ln(5)
+		pdf.SetFont("Arial", "B", 9)
+		pdf.SetTextColor(r, g, b)
+		pdf.SetX(10)
+		pdf.Cell(0, 5, "DESCRICAO")
+		pdf.Ln(6)
+		pdf.SetFont("Arial", "", 9)
+		pdf.SetTextColor(60, 60, 60)
+		pdf.SetX(10)
+		pdf.MultiCell(190, 4, removeAccents(quote.Description), "", "L", false)
+		pdf.Ln(3)
 	}
 
-	// ===== TABELA DE ITENS =====
-	pdf.SetFont("Arial", "B", 11)
-	pdf.Cell(0, 8, "Itens do Orcamento")
-	pdf.Ln(10)
+	// ========== TABELA DE ITENS ==========
+	pdf.SetFont("Arial", "B", 9)
+	pdf.SetTextColor(r, g, b)
+	pdf.SetX(10)
+	pdf.Cell(0, 5, "ITENS")
+	pdf.Ln(6)
 
 	// Cabeçalho da tabela
 	pdf.SetFillColor(r, g, b)
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont("Arial", "B", 9)
-	pdf.CellFormat(90, 8, "Descricao", "1", 0, "L", true, 0, "")
-	pdf.CellFormat(25, 8, "Qtd", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(30, 8, "Valor Unit.", "1", 0, "R", true, 0, "")
-	pdf.CellFormat(35, 8, "Total", "1", 1, "R", true, 0, "")
+	pdf.SetFont("Arial", "B", 8)
 
-	// Linhas da tabela
+	colW := []float64{95, 20, 35, 40} // Descrição, Qtd, Unit, Total
+	pdf.SetX(10)
+	pdf.CellFormat(colW[0], 7, "Descricao", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(colW[1], 7, "Qtd", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(colW[2], 7, "Unitario", "1", 0, "R", true, 0, "")
+	pdf.CellFormat(colW[3], 7, "Total", "1", 1, "R", true, 0, "")
+
+	// Itens
 	pdf.SetTextColor(0, 0, 0)
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetFillColor(255, 255, 255)
-	alternate := false
+	pdf.SetFont("Arial", "", 8)
+	alt := false
 
 	for _, item := range quote.Items {
-		if alternate {
+		if pdf.GetY() > 265 {
+			pdf.AddPage()
+			// Repetir cabeçalho
+			pdf.SetFillColor(r, g, b)
+			pdf.SetTextColor(255, 255, 255)
+			pdf.SetFont("Arial", "B", 8)
+			pdf.SetX(10)
+			pdf.CellFormat(colW[0], 7, "Descricao", "1", 0, "L", true, 0, "")
+			pdf.CellFormat(colW[1], 7, "Qtd", "1", 0, "C", true, 0, "")
+			pdf.CellFormat(colW[2], 7, "Unitario", "1", 0, "R", true, 0, "")
+			pdf.CellFormat(colW[3], 7, "Total", "1", 1, "R", true, 0, "")
+			pdf.SetTextColor(0, 0, 0)
+			pdf.SetFont("Arial", "", 8)
+		}
+
+		if alt {
 			pdf.SetFillColor(250, 250, 250)
 		} else {
 			pdf.SetFillColor(255, 255, 255)
 		}
 
-		pdf.CellFormat(90, 7, truncateString(item.Description, 45), "1", 0, "L", true, 0, "")
-		pdf.CellFormat(25, 7, fmt.Sprintf("%.2f", item.Quantity), "1", 0, "C", true, 0, "")
-		pdf.CellFormat(30, 7, formatCurrency(item.UnitPrice), "1", 0, "R", true, 0, "")
-		pdf.CellFormat(35, 7, formatCurrency(item.Total), "1", 1, "R", true, 0, "")
-
-		alternate = !alternate
+		pdf.SetX(10)
+		pdf.CellFormat(colW[0], 6, truncateString(removeAccents(item.Description), 50), "1", 0, "L", true, 0, "")
+		pdf.CellFormat(colW[1], 6, fmt.Sprintf("%.0f", item.Quantity), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(colW[2], 6, formatCurrency(item.UnitPrice), "1", 0, "R", true, 0, "")
+		pdf.CellFormat(colW[3], 6, formatCurrency(item.Total), "1", 1, "R", true, 0, "")
+		alt = !alt
 	}
 
-	pdf.Ln(5)
+	// ========== TOTAIS ==========
+	pdf.Ln(3)
+	totX := 120.0
 
-	// ===== TOTAIS =====
-	pdf.SetX(115)
-	pdf.SetFont("Arial", "", 10)
-	pdf.Cell(35, 6, "Subtotal:")
-	pdf.Cell(30, 6, formatCurrency(quote.Subtotal))
-	pdf.Ln(6)
+	// Subtotal
+	pdf.SetFont("Arial", "", 9)
+	pdf.SetTextColor(80, 80, 80)
+	pdf.SetX(totX)
+	pdf.CellFormat(40, 6, "Subtotal:", "", 0, "L", false, 0, "")
+	pdf.CellFormat(40, 6, formatCurrency(quote.Subtotal), "", 1, "R", false, 0, "")
 
+	// Desconto
 	if quote.Discount > 0 {
-		pdf.SetX(115)
-		discountLabel := "Desconto:"
+		pdf.SetTextColor(200, 50, 50)
+		pdf.SetX(totX)
+		lbl := "Desconto:"
+		val := quote.Discount
 		if quote.DiscountType == models.DiscountPercent {
-			discountLabel = fmt.Sprintf("Desconto (%.0f%%):", quote.Discount)
+			lbl = fmt.Sprintf("Desconto (%.0f%%):", quote.Discount)
+			val = quote.Subtotal * quote.Discount / 100
 		}
-		pdf.Cell(35, 6, discountLabel)
-		discountValue := quote.Discount
-		if quote.DiscountType == models.DiscountPercent {
-			discountValue = quote.Subtotal * quote.Discount / 100
-		}
-		pdf.Cell(30, 6, fmt.Sprintf("- %s", formatCurrency(discountValue)))
-		pdf.Ln(6)
+		pdf.CellFormat(40, 6, lbl, "", 0, "L", false, 0, "")
+		pdf.CellFormat(40, 6, fmt.Sprintf("-"+formatCurrency(val)), "", 1, "R", false, 0, "")
 	}
 
-	pdf.SetX(115)
-	pdf.SetFont("Arial", "B", 12)
+	// Total
+	pdf.Ln(1)
+	pdf.SetX(totX)
 	pdf.SetFillColor(r, g, b)
 	pdf.SetTextColor(255, 255, 255)
-	pdf.CellFormat(35, 8, "TOTAL:", "1", 0, "L", true, 0, "")
-	pdf.CellFormat(30, 8, formatCurrency(quote.Total), "1", 1, "R", true, 0, "")
+	pdf.SetFont("Arial", "B", 11)
+	pdf.CellFormat(40, 9, "TOTAL", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(40, 9, formatCurrency(quote.Total), "1", 1, "R", true, 0, "")
 
 	pdf.SetTextColor(0, 0, 0)
-	pdf.Ln(10)
+	pdf.Ln(5)
 
-	// ===== OBSERVAÇÕES =====
+	// ========== OBSERVAÇÕES ==========
 	if quote.Notes != "" {
-		pdf.SetFont("Arial", "B", 11)
-		pdf.Cell(0, 8, "Observacoes")
-		pdf.Ln(8)
-		pdf.SetFont("Arial", "", 10)
-		pdf.MultiCell(0, 5, quote.Notes, "", "", false)
+		if pdf.GetY() > 250 {
+			pdf.AddPage()
+		}
+		pdf.SetFont("Arial", "B", 9)
+		pdf.SetTextColor(r, g, b)
+		pdf.SetX(10)
+		pdf.Cell(0, 5, "OBSERVACOES")
 		pdf.Ln(5)
+		pdf.SetFont("Arial", "", 8)
+		pdf.SetTextColor(60, 60, 60)
+		pdf.SetX(10)
+		pdf.MultiCell(190, 4, removeAccents(quote.Notes), "", "L", false)
+		pdf.Ln(3)
 	}
 
-	// ===== TERMOS E CONDIÇÕES =====
+	// ========== TERMOS ==========
 	if template != nil && template.TermsText != "" {
-		pdf.SetFont("Arial", "B", 11)
-		pdf.Cell(0, 8, "Termos e Condicoes")
-		pdf.Ln(8)
-		pdf.SetFont("Arial", "", 9)
-		pdf.SetTextColor(80, 80, 80)
-		pdf.MultiCell(0, 4, template.TermsText, "", "", false)
+		if pdf.GetY() > 245 {
+			pdf.AddPage()
+		}
+		pdf.SetFont("Arial", "B", 9)
+		pdf.SetTextColor(r, g, b)
+		pdf.SetX(10)
+		pdf.Cell(0, 5, "TERMOS E CONDICOES")
 		pdf.Ln(5)
+		pdf.SetFont("Arial", "", 7)
+		pdf.SetTextColor(100, 100, 100)
+		pdf.SetX(10)
+		pdf.MultiCell(190, 3, removeAccents(template.TermsText), "", "L", false)
 	}
 
-	// ===== RODAPÉ =====
-	pdf.SetY(-30)
-	pdf.SetTextColor(100, 100, 100)
-	pdf.SetFont("Arial", "", 8)
-
+	// ========== RODAPÉ ==========
+	pdf.SetY(-12)
+	pdf.SetDrawColor(200, 200, 200)
+	pdf.Line(10, pdf.GetY()-2, 200, pdf.GetY()-2)
+	pdf.SetTextColor(140, 140, 140)
+	pdf.SetFont("Arial", "", 7)
+	footerText := fmt.Sprintf("Gerado em %s | %s", formatDate(time.Now()), quote.Number)
 	if template != nil && template.FooterText != "" {
-		pdf.Cell(0, 5, template.FooterText)
-		pdf.Ln(5)
+		footerText = removeAccents(template.FooterText) + " | " + footerText
 	}
+	pdf.SetX(10)
+	pdf.Cell(190, 4, footerText)
 
-	pdf.Cell(0, 5, fmt.Sprintf("Documento gerado em %s", formatDate(time.Now())))
-
-	// Gerar buffer do PDF
+	// Gerar PDF
 	var buf bytes.Buffer
-	err = pdf.Output(&buf)
-	if err != nil {
+	if err = pdf.Output(&buf); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Falha ao gerar PDF"})
 	}
 
-	// Enviar PDF
 	c.Set("Content-Type", "application/pdf")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", quote.Number))
-
 	return c.Send(buf.Bytes())
 }
 
-// hexToRGB converte cor hex para RGB
 func hexToRGB(hex string) (int, int, int) {
-	if len(hex) == 7 && hex[0] == '#' {
-		hex = hex[1:]
-	}
+	hex = strings.TrimPrefix(hex, "#")
 	if len(hex) != 6 {
-		return 120, 113, 108 // stone-500 default
+		return 55, 65, 81 // gray-700
 	}
-
 	var r, g, b int
 	fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
 	return r, g, b
 }
 
-// truncateString trunca string para tamanho máximo
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+func truncateString(s string, max int) string {
+	if len(s) <= max {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	return s[:max-3] + "..."
 }
 
-// downloadImage baixa uma imagem de URL e retorna os bytes e o tipo
+func removeAccents(s string) string {
+	r := strings.NewReplacer(
+		"á", "a", "à", "a", "ã", "a", "â", "a", "ä", "a",
+		"é", "e", "è", "e", "ê", "e", "ë", "e",
+		"í", "i", "ì", "i", "î", "i", "ï", "i",
+		"ó", "o", "ò", "o", "õ", "o", "ô", "o", "ö", "o",
+		"ú", "u", "ù", "u", "û", "u", "ü", "u",
+		"ç", "c", "ñ", "n",
+		"Á", "A", "À", "A", "Ã", "A", "Â", "A", "Ä", "A",
+		"É", "E", "È", "E", "Ê", "E", "Ë", "E",
+		"Í", "I", "Ì", "I", "Î", "I", "Ï", "I",
+		"Ó", "O", "Ò", "O", "Õ", "O", "Ô", "O", "Ö", "O",
+		"Ú", "U", "Ù", "U", "Û", "U", "Ü", "U",
+		"Ç", "C", "Ñ", "N",
+	)
+	return r.Replace(s)
+}
+
+func getLogoData(logoURL string) ([]byte, string) {
+	if logoURL == "" {
+		return nil, ""
+	}
+
+	// Base64
+	if strings.HasPrefix(logoURL, "data:image/") {
+		parts := strings.SplitN(logoURL, ",", 2)
+		if len(parts) != 2 {
+			return nil, ""
+		}
+		var imgType string
+		if strings.Contains(parts[0], "png") {
+			imgType = "PNG"
+		} else if strings.Contains(parts[0], "jpeg") || strings.Contains(parts[0], "jpg") {
+			imgType = "JPEG"
+		} else if strings.Contains(parts[0], "gif") {
+			imgType = "GIF"
+		} else {
+			return nil, ""
+		}
+		data, err := base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return nil, ""
+		}
+		return data, imgType
+	}
+
+	// URL
+	return downloadImage(logoURL)
+}
+
 func downloadImage(url string) ([]byte, string) {
 	if url == "" {
 		return nil, ""
 	}
-
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
-	if err != nil {
+	if err != nil || resp.StatusCode != 200 {
 		return nil, ""
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, ""
-	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, ""
 	}
 
-	// Detectar tipo de imagem
-	contentType := resp.Header.Get("Content-Type")
-	var imageType string
+	ct := resp.Header.Get("Content-Type")
+	var imgType string
 	switch {
-	case strings.Contains(contentType, "png"):
-		imageType = "PNG"
-	case strings.Contains(contentType, "jpeg"), strings.Contains(contentType, "jpg"):
-		imageType = "JPEG"
-	case strings.Contains(contentType, "gif"):
-		imageType = "GIF"
+	case strings.Contains(ct, "png"):
+		imgType = "PNG"
+	case strings.Contains(ct, "jpeg"), strings.Contains(ct, "jpg"):
+		imgType = "JPEG"
+	case strings.Contains(ct, "gif"):
+		imgType = "GIF"
 	default:
-		// Tentar detectar pelo magic number
-		if len(data) > 8 {
-			if data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
-				imageType = "PNG"
+		if len(data) > 4 {
+			if data[0] == 0x89 && data[1] == 0x50 {
+				imgType = "PNG"
 			} else if data[0] == 0xFF && data[1] == 0xD8 {
-				imageType = "JPEG"
-			} else if data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 {
-				imageType = "GIF"
+				imgType = "JPEG"
 			}
 		}
 	}
-
-	if imageType == "" {
-		return nil, ""
-	}
-
-	return data, imageType
+	return data, imgType
 }

@@ -36,6 +36,7 @@ describe('useTransactions', () => {
       year: 2024,
       dueDay: 1,
       amount: 1000,
+      paidAmount: 1000,
       category: 'Salario',
       status: Status.PAID,
       description: 'Salario Janeiro',
@@ -47,6 +48,7 @@ describe('useTransactions', () => {
       year: 2024,
       dueDay: 1,
       amount: 500,
+      paidAmount: 0,
       category: 'Bonus',
       status: Status.OPEN,
       description: 'Bonus trimestral',
@@ -135,6 +137,7 @@ describe('useTransactions', () => {
           year: 2024,
           dueDay: 1,
           amount: 2000,
+          paidAmount: 2000,
           category: 'Projeto',
           status: Status.PAID,
         },
@@ -170,6 +173,7 @@ describe('useTransactions', () => {
         year: 2024,
         dueDay: 1,
         amount: 1500,
+        paidAmount: 0,
         category: 'Projeto',
         status: Status.OPEN,
         description: 'Novo projeto',
@@ -215,6 +219,7 @@ describe('useTransactions', () => {
           year: 2024,
           dueDay: 1,
           amount: 100,
+          paidAmount: 0,
           category: 'Test',
           status: Status.OPEN,
         });
@@ -240,6 +245,7 @@ describe('useTransactions', () => {
             year: 2024,
             dueDay: 1,
             amount: 100,
+            paidAmount: 0,
             category: 'Test',
             status: Status.OPEN,
           });
@@ -261,6 +267,7 @@ describe('useTransactions', () => {
         year: 2024,
         dueDay: 1,
         amount: 1200,
+        paidAmount: 1200,
         category: 'Salario',
         status: Status.PAID,
         description: 'Salario Janeiro atualizado',
@@ -309,6 +316,7 @@ describe('useTransactions', () => {
           year: 2024,
           dueDay: 1,
           amount: 100,
+          paidAmount: 0,
           category: 'Test',
           status: Status.OPEN,
         });
@@ -334,6 +342,7 @@ describe('useTransactions', () => {
             year: 2024,
             dueDay: 1,
             amount: 100,
+            paidAmount: 0,
             category: 'Test',
             status: Status.OPEN,
           });
@@ -515,6 +524,7 @@ describe('useTransactions', () => {
         year: 2024,
         dueDay: 1,
         amount: 1000,
+        paidAmount: 1000,
         category: 'Salario',
         status: Status.PAID,
       });
@@ -531,6 +541,7 @@ describe('useTransactions', () => {
           year: 2024,
           dueDay: 1,
           amount: 1000,
+          paidAmount: 1000,
           category: 'Salario',
           status: Status.PAID,
         });

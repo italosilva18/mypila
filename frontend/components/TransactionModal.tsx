@@ -27,6 +27,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
     year: new Date().getFullYear(),
     dueDay: 1,
     amount: 0,
+    paidAmount: 0,
     category: '',
     status: Status.OPEN,
     description: ''
@@ -55,6 +56,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
         year: transaction.year,
         dueDay: transaction.dueDay || 1,
         amount: transaction.amount,
+        paidAmount: transaction.paidAmount || 0,
         category: transaction.category,
         status: transaction.status,
         description: transaction.description || ''
@@ -65,6 +67,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
         year: new Date().getFullYear(),
         dueDay: 1,
         amount: 0,
+        paidAmount: 0,
         category: categories.length > 0 ? categories[0].name : '',
         status: Status.OPEN,
         description: ''
@@ -156,7 +159,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
           <div className="grid grid-cols-2 gap-3 md:gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                Valor <span className="text-destructive">*</span>
+                Valor Total <span className="text-destructive">*</span>
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">R$</span>
@@ -171,6 +174,40 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
               </div>
               <ErrorMessage error={getError('amount')} />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">
+                Valor Pago
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">R$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="input pl-10"
+                  placeholder="0,00"
+                  value={formData.paidAmount || ''}
+                  onChange={(e) => {
+                    const paidAmount = parseFloat(e.target.value) || 0;
+                    // Auto-update status based on payment
+                    let newStatus = formData.status;
+                    if (paidAmount >= formData.amount && formData.amount > 0) {
+                      newStatus = Status.PAID;
+                    } else if (paidAmount === 0) {
+                      newStatus = Status.OPEN;
+                    }
+                    setFormData({ ...formData, paidAmount, status: newStatus });
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted mt-1">
+                {formData.amount > 0 && formData.paidAmount > 0 && formData.paidAmount < formData.amount && (
+                  <span className="text-warning">Restante: R$ {(formData.amount - formData.paidAmount).toFixed(2)}</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
                 Categoria <span className="text-destructive">*</span>
@@ -236,43 +273,43 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 md:gap-4">
+          <div className="grid grid-cols-3 gap-2 md:gap-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
+              <label className="block text-xs md:text-sm font-medium text-foreground mb-1.5">
                 Mes <span className="text-destructive">*</span>
               </label>
               <select
-                className={`select ${hasError('month') ? 'input-error' : ''}`}
+                className={`select text-xs md:text-sm ${hasError('month') ? 'input-error' : ''}`}
                 value={formData.month}
                 onChange={(e) => setFormData({ ...formData, month: e.target.value })}
               >
                 {MONTHS.map(m => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{m === 'Acumulado' ? 'Acum' : m.substring(0, 3)}</option>
                 ))}
               </select>
               <ErrorMessage error={getError('month')} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
+              <label className="block text-xs md:text-sm font-medium text-foreground mb-1.5">
                 Ano <span className="text-destructive">*</span>
               </label>
               <input
                 type="number"
-                className={`input ${hasError('year') ? 'input-error' : ''}`}
+                className={`input text-xs md:text-sm ${hasError('year') ? 'input-error' : ''}`}
                 value={formData.year}
                 onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) || new Date().getFullYear() })}
               />
               <ErrorMessage error={getError('year')} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
+              <label className="block text-xs md:text-sm font-medium text-foreground mb-1.5">
                 Dia Venc.
               </label>
               <input
                 type="number"
                 min="1"
                 max="31"
-                className="input"
+                className="input text-xs md:text-sm"
                 value={formData.dueDay}
                 onChange={(e) => {
                   let day = parseInt(e.target.value) || 1;
@@ -299,10 +336,10 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
           <button
             type="submit"
             disabled={hasErrors() || isSubmitting}
-            className={`w-full mt-4 flex items-center justify-center gap-2 ${
+            className={`w-full mt-4 flex items-center justify-center gap-2 min-h-[48px] md:min-h-0 ${
               hasErrors() || isSubmitting
-                ? 'bg-muted/20 text-muted cursor-not-allowed py-3 rounded-xl border border-border'
-                : 'btn-primary'
+                ? 'bg-muted/20 text-muted cursor-not-allowed py-3.5 md:py-3 rounded-xl border border-border'
+                : 'btn-primary py-3.5 md:py-3'
             }`}
           >
             {isSubmitting ? (
@@ -310,7 +347,8 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSave, onC
             ) : (
               <Save className="w-4 h-4" />
             )}
-            {isSubmitting ? 'Salvando...' : (transaction ? 'Salvar Alteracoes' : 'Salvar Transacao')}
+            <span className="hidden sm:inline">{isSubmitting ? 'Salvando...' : (transaction ? 'Salvar Alteracoes' : 'Salvar Transacao')}</span>
+            <span className="sm:hidden">{isSubmitting ? 'Salvando...' : 'Salvar'}</span>
           </button>
         </form>
       </div>

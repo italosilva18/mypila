@@ -228,6 +228,7 @@ describe('ApiService', () => {
         year: 2024,
         dueDay: 1,
         amount: 2000,
+        paidAmount: 0,
         category: 'Projeto',
         status: Status.OPEN,
         description: 'Novo projeto',
@@ -259,6 +260,7 @@ describe('ApiService', () => {
         year: 2024,
         dueDay: 1,
         amount: 100,
+        paidAmount: 0,
         category: 'Test',
         status: Status.OPEN,
       };
@@ -275,6 +277,7 @@ describe('ApiService', () => {
         year: 2024,
         dueDay: 1,
         amount: 1500,
+        paidAmount: 1500,
         category: 'Salario',
         status: Status.PAID,
         description: 'Atualizado',

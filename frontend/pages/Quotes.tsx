@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Quote, QuoteStatus, Category } from '../types';
 import {
     Plus, Trash2, FileText, Loader2, Edit2, Copy, Download,
-    Eye, Send, CheckCircle, XCircle, Play, Filter, Search, DollarSign
+    Eye, Send, CheckCircle, XCircle, Play, Filter, Search, DollarSign, MessageCircle
 } from 'lucide-react';
 import { QuoteModal } from '../components/QuoteModal';
 import { useToast } from '../contexts/ToastContext';
@@ -167,6 +167,60 @@ export const Quotes: React.FC = () => {
         navigate(`/company/${companyId}/quotes/${quoteId}/comparison`);
     };
 
+    const handleSendWhatsApp = useCallback(async (quote: Quote) => {
+        try {
+            // Buscar orçamento completo com itens
+            const fullQuote = await api.getQuote(quote.id);
+
+            // Formatar lista de itens
+            const itemsList = fullQuote.items && fullQuote.items.length > 0
+                ? fullQuote.items.map(item => `• ${item.description}: ${item.quantity}x ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.total)}`).join('\n')
+                : '(sem itens)';
+
+            // Montar mensagem
+            let message = `*ORCAMENTO ${fullQuote.number}*\n\n`;
+            message += `*${fullQuote.title}*\n\n`;
+            message += `*Cliente:* ${fullQuote.clientName}\n`;
+            if (fullQuote.clientDocument) message += `*Doc:* ${fullQuote.clientDocument}\n`;
+            message += `\n*Itens:*\n${itemsList}\n\n`;
+            if (fullQuote.discount > 0) {
+                const discountValue = fullQuote.discountType === 'PERCENT'
+                    ? fullQuote.subtotal * fullQuote.discount / 100
+                    : fullQuote.discount;
+                message += `*Subtotal:* ${formatCurrency(fullQuote.subtotal)}\n`;
+                message += `*Desconto:* -${formatCurrency(discountValue)}\n`;
+            }
+            message += `*TOTAL: ${formatCurrency(fullQuote.total)}*\n\n`;
+            message += `*Validade:* ${formatDate(fullQuote.validUntil)}\n`;
+            if (fullQuote.notes) message += `\n*Obs:* ${fullQuote.notes}\n`;
+            message += `\n_Orcamento gerado pelo MYPILA_`;
+
+            const encodedMessage = encodeURIComponent(message);
+
+            // Tratar telefone - remover tudo que não é número
+            let phoneNumber = (fullQuote.clientPhone || '').replace(/\D/g, '');
+
+            // Formatar número para WhatsApp:
+            // Se já começa com 55 (código do Brasil), usar como está
+            // Se não começa com 55 e tem 10-11 dígitos, adicionar 55
+            if (phoneNumber.length >= 10 && !phoneNumber.startsWith('55')) {
+                phoneNumber = '55' + phoneNumber;
+            }
+
+            // Abrir WhatsApp - sempre abre, mesmo sem número
+            const whatsappUrl = phoneNumber.length >= 12
+                ? `https://wa.me/${phoneNumber}?text=${encodedMessage}`
+                : `https://wa.me/?text=${encodedMessage}`;
+
+            window.open(whatsappUrl, '_blank');
+
+            addToast('success', 'WhatsApp aberto com o orcamento');
+        } catch (err) {
+            console.error('Error sending WhatsApp:', err);
+            addToast('error', 'Erro ao preparar mensagem');
+        }
+    }, [addToast]);
+
     const handleGenerateTransaction = useCallback(async (quote: Quote) => {
         if (!confirm(`Deseja gerar uma receita de ${formatCurrency(quote.total)} a partir do orçamento ${quote.number}?`)) return;
         try {
@@ -310,6 +364,13 @@ export const Quotes: React.FC = () => {
                                                 >
                                                     <Download className="w-4 h-4" />
                                                 </button>
+                                                <button
+                                                    onClick={() => handleSendWhatsApp(quote)}
+                                                    className="p-2 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                    title="Enviar via WhatsApp"
+                                                >
+                                                    <MessageCircle className="w-4 h-4" />
+                                                </button>
                                                 {quote.status === QuoteStatus.APPROVED && (
                                                     <button
                                                         onClick={() => handleGenerateTransaction(quote)}
@@ -364,22 +425,29 @@ export const Quotes: React.FC = () => {
                                 <div className="flex items-center gap-2 pt-3 border-t border-stone-100">
                                     <button
                                         onClick={() => handleEdit(quote)}
-                                        className="flex-1 flex items-center justify-center gap-1 py-2 text-stone-600 bg-stone-100 rounded-lg text-sm"
+                                        className="flex-1 flex items-center justify-center gap-1 py-2.5 text-stone-600 bg-stone-100 rounded-lg text-sm min-h-[44px]"
                                     >
                                         <Edit2 className="w-3.5 h-3.5" />
                                         Editar
                                     </button>
                                     <button
                                         onClick={() => handleDownloadPDF(quote.id, quote.number)}
-                                        className="flex-1 flex items-center justify-center gap-1 py-2 text-green-600 bg-green-50 rounded-lg text-sm"
+                                        className="p-2.5 text-green-600 bg-green-50 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        title="Baixar PDF"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        PDF
+                                        <Download className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleSendWhatsApp(quote)}
+                                        className="flex-1 flex items-center justify-center gap-1 py-2.5 text-emerald-600 bg-emerald-50 rounded-lg text-sm min-h-[44px]"
+                                    >
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                        WhatsApp
                                     </button>
                                     {quote.status === QuoteStatus.APPROVED && (
                                         <button
                                             onClick={() => handleGenerateTransaction(quote)}
-                                            className="p-2 text-emerald-600 bg-emerald-50 rounded-lg"
+                                            className="p-2.5 text-purple-600 bg-purple-50 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
                                             title="Gerar Receita"
                                         >
                                             <DollarSign className="w-4 h-4" />
@@ -387,7 +455,8 @@ export const Quotes: React.FC = () => {
                                     )}
                                     <button
                                         onClick={() => handleDelete(quote.id)}
-                                        className="p-2 text-red-600 bg-red-50 rounded-lg"
+                                        className="p-2.5 text-red-600 bg-red-50 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        title="Excluir"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>

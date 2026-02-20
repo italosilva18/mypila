@@ -27,6 +27,7 @@ type Transaction struct {
 	Year        int       `json:"year"`
 	DueDay      int       `json:"dueDay"`
 	Amount      float64   `json:"amount"`
+	PaidAmount  float64   `json:"paidAmount"`
 	Category    string    `json:"category"`
 	Status      Status    `json:"status"`
 	Description string    `json:"description,omitempty"`
@@ -40,6 +41,7 @@ type CreateTransactionRequest struct {
 	Year        int     `json:"year"`
 	DueDay      int     `json:"dueDay"`
 	Amount      float64 `json:"amount"`
+	PaidAmount  float64 `json:"paidAmount"`
 	Category    string  `json:"category"`
 	Status      Status  `json:"status"`
 	Description string  `json:"description,omitempty"`
@@ -50,6 +52,7 @@ type UpdateTransactionRequest struct {
 	Year        int     `json:"year"`
 	DueDay      int     `json:"dueDay"`
 	Amount      float64 `json:"amount"`
+	PaidAmount  float64 `json:"paidAmount"`
 	Category    string  `json:"category"`
 	Status      Status  `json:"status"`
 	Description string  `json:"description,omitempty"`

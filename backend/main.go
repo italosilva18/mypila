@@ -204,6 +204,15 @@ func main() {
 	quoteTemplates.Put("/:id", handlers.UpdateQuoteTemplate)
 	quoteTemplates.Delete("/:id", middleware.StrictLimiter(), handlers.DeleteQuoteTemplate)
 
+	// Admin routes (require admin authentication)
+	admin := api.Group("/admin", middleware.AdminMiddleware())
+	admin.Get("/stats", handlers.GetAdminStats)
+	admin.Get("/users", handlers.GetAllUsers)
+	admin.Put("/users/:id", handlers.UpdateUser)
+	admin.Delete("/users/:id", handlers.DeleteUser)
+	admin.Get("/companies", handlers.GetAllCompanies)
+	admin.Get("/transactions", handlers.GetAllTransactionsAdmin)
+
 	// Seed route (for initial data) - ONLY in explicit development mode
 	if os.Getenv("GO_ENV") == "development" {
 		api.Post("/seed", handlers.SeedTransactions)

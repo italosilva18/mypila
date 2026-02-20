@@ -47,20 +47,24 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
   }, [categories]);
 
   // Aggregate data for Bar Chart (Monthly flow)
+  // Now considers paidAmount for partial payments
   const monthlyData = useMemo(() => {
     const data = filteredTransactions.reduce((acc, curr) => {
       // Skip accumulated items like Vacation for the timeline
       if (curr.month === 'Acumulado') return acc;
 
+      const paidAmount = curr.paidAmount || 0;
+      const openAmount = curr.amount - paidAmount;
+
       const existing = acc.find(item => item.month === curr.month);
       if (existing) {
-        if (curr.status === Status.PAID) existing.paid += curr.amount;
-        else existing.open += curr.amount;
+        existing.paid += paidAmount;
+        existing.open += openAmount > 0 ? openAmount : 0;
       } else {
         acc.push({
           month: curr.month,
-          paid: curr.status === Status.PAID ? curr.amount : 0,
-          open: curr.status === Status.OPEN ? curr.amount : 0,
+          paid: paidAmount,
+          open: openAmount > 0 ? openAmount : 0,
         });
       }
       return acc;
@@ -77,15 +81,21 @@ export const FinancialChart = React.memo<Props>(({ transactions, categories = []
   }, [filteredTransactions]);
 
   // Aggregate data for Pie Chart (Outstanding by Category)
+  // Now considers paidAmount for partial payments
   const openData = useMemo(() => {
     return filteredTransactions
-      .filter(t => t.status === Status.OPEN)
       .reduce((acc, curr) => {
+        const paidAmount = curr.paidAmount || 0;
+        const openAmount = curr.amount - paidAmount;
+
+        // Only include if there's still something to pay
+        if (openAmount <= 0) return acc;
+
         const existing = acc.find(item => item.name === curr.category);
         if (existing) {
-          existing.value += curr.amount;
+          existing.value += openAmount;
         } else {
-          acc.push({ name: curr.category, value: curr.amount });
+          acc.push({ name: curr.category, value: openAmount });
         }
         return acc;
       }, [] as { name: string; value: number }[]);

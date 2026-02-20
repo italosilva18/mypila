@@ -79,7 +79,7 @@ export const NotificationBell: React.FC<Props> = ({ companyId }) => {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-card rounded-xl shadow-lg border border-border z-50 overflow-hidden animate-fadeIn">
+        <div className="absolute right-0 mt-2 w-[calc(100vw-24px)] sm:w-80 max-w-[320px] -right-2 sm:right-0 bg-card rounded-xl shadow-lg border border-border z-50 overflow-hidden animate-fadeIn">
           <div className="flex items-center justify-between p-3 border-b border-border bg-primary-50/50">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-warning" />

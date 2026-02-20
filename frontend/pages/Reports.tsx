@@ -30,17 +30,23 @@ export const Reports: React.FC = () => {
         });
     }, [transactions, statusFilter, monthFilter, yearFilter]);
 
-    const totalValue = useMemo(() => {
-        return filteredTransactions.reduce((acc, t) => acc + t.amount, 0);
+    // Calculate totals considering paidAmount for partial payments
+    const totals = useMemo(() => {
+        return filteredTransactions.reduce((acc, t) => {
+            const paidAmount = t.paidAmount || 0;
+            const remainingAmount = t.amount - paidAmount;
+
+            acc.total += t.amount;
+            acc.paid += paidAmount;
+            acc.open += remainingAmount > 0 ? remainingAmount : 0;
+
+            return acc;
+        }, { total: 0, paid: 0, open: 0 });
     }, [filteredTransactions]);
 
-    const totalPaid = useMemo(() => {
-        return filteredTransactions.filter(t => t.status === Status.PAID).reduce((acc, t) => acc + t.amount, 0);
-    }, [filteredTransactions]);
-
-    const totalOpen = useMemo(() => {
-        return filteredTransactions.filter(t => t.status === Status.OPEN).reduce((acc, t) => acc + t.amount, 0);
-    }, [filteredTransactions]);
+    const totalValue = totals.total;
+    const totalPaid = totals.paid;
+    const totalOpen = totals.open;
 
     const handlePrint = () => {
         window.print();
@@ -79,8 +85,16 @@ export const Reports: React.FC = () => {
             const categoryTotal = items.reduce((acc, t) => acc + t.amount, 0);
             report += `*${category}* (${formatCurrency(categoryTotal)})\n`;
             items.forEach(t => {
-                const statusIcon = t.status === Status.PAID ? '✓' : '○';
-                report += `  ${statusIcon} ${t.description || 'Sem descricao'} - ${formatCurrency(t.amount)} (${t.month}/${t.year})\n`;
+                const paidAmount = t.paidAmount || 0;
+                const isPartial = paidAmount > 0 && paidAmount < t.amount;
+                const isPaid = t.status === Status.PAID || paidAmount >= t.amount;
+                const statusIcon = isPaid ? '✓' : isPartial ? '◐' : '○';
+                let line = `  ${statusIcon} ${t.description || 'Sem descricao'} - ${formatCurrency(t.amount)}`;
+                if (isPartial) {
+                    line += ` (Pago: ${formatCurrency(paidAmount)} | Resta: ${formatCurrency(t.amount - paidAmount)})`;
+                }
+                line += ` (${t.month}/${t.year})\n`;
+                report += line;
             });
             report += `\n`;
         });
@@ -255,22 +269,40 @@ export const Reports: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border print:divide-gray-200">
-                        {filteredTransactions.map((t) => (
-                            <tr key={t.id} className="table-row print:text-black">
-                                <td className="px-6 py-4 font-medium text-foreground print:text-black">{t.description || 'Sem descricao'}</td>
-                                <td className="px-6 py-4 text-muted print:text-black">{t.category}</td>
-                                <td className="px-6 py-4 text-muted print:text-black">{t.month}/{t.year}</td>
-                                <td className="px-6 py-4 font-bold text-foreground print:text-black">{formatCurrency(t.amount)}</td>
-                                <td className="px-6 py-4 text-center">
-                                    <span className={`badge ${t.status === Status.PAID
-                                        ? 'badge-success print:bg-green-100 print:text-green-800'
-                                        : 'badge-warning print:bg-yellow-100 print:text-yellow-800'
+                        {filteredTransactions.map((t) => {
+                            const paidAmount = t.paidAmount || 0;
+                            const isPartial = paidAmount > 0 && paidAmount < t.amount;
+                            const isPaid = t.status === Status.PAID || paidAmount >= t.amount;
+
+                            return (
+                                <tr key={t.id} className="table-row print:text-black">
+                                    <td className="px-6 py-4 font-medium text-foreground print:text-black">{t.description || 'Sem descricao'}</td>
+                                    <td className="px-6 py-4 text-muted print:text-black">{t.category}</td>
+                                    <td className="px-6 py-4 text-muted print:text-black">{t.month}/{t.year}</td>
+                                    <td className="px-6 py-4 print:text-black">
+                                        <div className="font-bold text-foreground">{formatCurrency(t.amount)}</div>
+                                        {isPartial && (
+                                            <div className="text-xs text-muted mt-0.5">
+                                                <span className="text-success">Pago: {formatCurrency(paidAmount)}</span>
+                                                <span className="mx-1">|</span>
+                                                <span className="text-warning">Resta: {formatCurrency(t.amount - paidAmount)}</span>
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        <span className={`badge ${
+                                            isPaid
+                                                ? 'badge-success print:bg-green-100 print:text-green-800'
+                                                : isPartial
+                                                    ? 'bg-blue-100 text-blue-700 border border-blue-200 print:bg-blue-100 print:text-blue-800'
+                                                    : 'badge-warning print:bg-yellow-100 print:text-yellow-800'
                                         }`}>
-                                        {t.status === Status.PAID ? 'PAGO' : 'ABERTO'}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
+                                            {isPaid ? 'PAGO' : isPartial ? 'PARCIAL' : 'ABERTO'}
+                                        </span>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -278,25 +310,47 @@ export const Reports: React.FC = () => {
             {/* Mobile Cards */}
             <div className="md:hidden card overflow-hidden">
                 <div className="divide-y divide-border">
-                    {filteredTransactions.map((t) => (
-                        <div key={t.id} className="px-3 py-2.5">
-                            <div className="flex items-center gap-2">
-                                <span className={`shrink-0 p-1 rounded-md ${t.status === Status.PAID ? 'bg-success-light text-success' : 'bg-warning-light text-warning'}`}>
-                                    {t.status === Status.PAID ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-1">
-                                        <p className="font-medium text-xs text-foreground truncate">{t.description || 'Sem descricao'}</p>
-                                        <p className="text-xs font-semibold text-foreground shrink-0">{formatCurrency(t.amount)}</p>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700 font-medium">{t.category}</span>
-                                        <span className="text-[9px] text-muted">{t.month}/{t.year}</span>
+                    {filteredTransactions.map((t) => {
+                        const paidAmount = t.paidAmount || 0;
+                        const isPartial = paidAmount > 0 && paidAmount < t.amount;
+                        const isPaid = t.status === Status.PAID || paidAmount >= t.amount;
+
+                        return (
+                            <div key={t.id} className="px-3 py-2.5">
+                                <div className="flex items-center gap-2">
+                                    <span className={`shrink-0 p-1 rounded-md ${
+                                        isPaid
+                                            ? 'bg-success-light text-success'
+                                            : isPartial
+                                                ? 'bg-blue-100 text-blue-600'
+                                                : 'bg-warning-light text-warning'
+                                    }`}>
+                                        {isPaid ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <p className="font-medium text-xs text-foreground truncate">{t.description || 'Sem descricao'}</p>
+                                            <div className="text-right shrink-0">
+                                                <p className="text-xs font-semibold text-foreground">{formatCurrency(t.amount)}</p>
+                                                {isPartial && (
+                                                    <p className="text-[8px] text-warning">Resta: {formatCurrency(t.amount - paidAmount)}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700 font-medium">{t.category}</span>
+                                            <span className="text-[9px] text-muted">{t.month}/{t.year}</span>
+                                            {isPartial && (
+                                                <span className="text-[8px] px-1 py-0.5 rounded bg-blue-100 text-blue-600 border border-blue-200">
+                                                    Parcial
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 

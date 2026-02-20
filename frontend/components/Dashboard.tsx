@@ -98,12 +98,21 @@ export const Dashboard: React.FC = () => {
     }, [allFilteredTransactions, clientPage, clientPageSize]);
 
     // Stats should be calculated from ALL filtered transactions, not just the current page
+    // Now considers paidAmount for partial payments
     const currentStats = useMemo(() => {
-        return {
-            paid: allFilteredTransactions.filter(t => t.status === Status.PAID).reduce((acc, t) => acc + t.amount, 0),
-            open: allFilteredTransactions.filter(t => t.status === Status.OPEN).reduce((acc, t) => acc + t.amount, 0),
-            total: allFilteredTransactions.reduce((acc, t) => acc + t.amount, 0)
-        };
+        return allFilteredTransactions.reduce((acc, t) => {
+            const paidAmount = t.paidAmount || 0;
+            const remainingAmount = t.amount - paidAmount;
+
+            // Paid = sum of all paidAmounts (including partial payments)
+            acc.paid += paidAmount;
+            // Open = sum of remaining amounts (what still needs to be paid)
+            acc.open += remainingAmount > 0 ? remainingAmount : 0;
+            // Total = sum of all amounts
+            acc.total += t.amount;
+
+            return acc;
+        }, { paid: 0, open: 0, total: 0 });
     }, [allFilteredTransactions]);
 
     const handlePageChange = useCallback((page: number) => {
@@ -397,17 +406,34 @@ export const Dashboard: React.FC = () => {
                                             <span className="badge badge-primary">{t.category}</span>
                                         </td>
                                         <td className="py-4 px-6 text-sm text-muted">{t.month} / {t.year}</td>
-                                        <td className="py-4 px-6 font-medium text-foreground">{formatCurrency(t.amount)}</td>
+                                        <td className="py-4 px-6">
+                                            <div className="font-medium text-foreground">{formatCurrency(t.amount)}</div>
+                                            {(t.paidAmount || 0) > 0 && (t.paidAmount || 0) < t.amount && (
+                                                <div className="text-xs text-muted mt-0.5">
+                                                    <span className="text-success">Pago: {formatCurrency(t.paidAmount || 0)}</span>
+                                                    <span className="mx-1">|</span>
+                                                    <span className="text-warning">Resta: {formatCurrency(t.amount - (t.paidAmount || 0))}</span>
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="py-4 px-6 text-center">
-                                            <button
-                                                onClick={() => toggleStatus(t.id)}
-                                                className={`badge cursor-pointer transition-all ${
-                                                    t.status === Status.PAID ? 'badge-success' : 'badge-warning'
-                                                }`}
-                                            >
-                                                {t.status === Status.PAID ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <AlertCircle className="w-3 h-3 mr-1" />}
-                                                {t.status === Status.PAID ? 'Pago' : 'Aberto'}
-                                            </button>
+                                            {(() => {
+                                                const paidAmount = t.paidAmount || 0;
+                                                const isPartial = paidAmount > 0 && paidAmount < t.amount;
+                                                const isPaid = t.status === Status.PAID || paidAmount >= t.amount;
+
+                                                return (
+                                                    <button
+                                                        onClick={() => toggleStatus(t.id)}
+                                                        className={`badge cursor-pointer transition-all ${
+                                                            isPaid ? 'badge-success' : isPartial ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'badge-warning'
+                                                        }`}
+                                                    >
+                                                        {isPaid ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <AlertCircle className="w-3 h-3 mr-1" />}
+                                                        {isPaid ? 'Pago' : isPartial ? 'Parcial' : 'Aberto'}
+                                                    </button>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="py-4 px-6 text-right">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -433,50 +459,68 @@ export const Dashboard: React.FC = () => {
 
                     {/* Mobile Card View */}
                     <div className="md:hidden divide-y divide-border">
-                        {filteredTransactions.map((t) => (
-                            <div key={t.id} className="px-2.5 py-2 active:bg-primary-50/50 transition-colors">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => toggleStatus(t.id)}
-                                        className={`shrink-0 p-1 rounded-md transition-all active:scale-95 ${
-                                            t.status === Status.PAID
-                                                ? 'bg-success-light text-success border border-success/30'
-                                                : 'bg-warning-light text-warning border border-warning/30'
-                                        }`}
-                                    >
-                                        {t.status === Status.PAID ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                                    </button>
+                        {filteredTransactions.map((t) => {
+                            const paidAmount = t.paidAmount || 0;
+                            const isPartial = paidAmount > 0 && paidAmount < t.amount;
+                            const isPaid = t.status === Status.PAID || paidAmount >= t.amount;
 
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between gap-1">
-                                            <p className="font-medium text-xs text-foreground truncate">{t.description || 'Sem descricao'}</p>
-                                            <p className="text-xs font-semibold text-foreground shrink-0">{formatCurrency(t.amount)}</p>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700 font-medium border border-primary-200">
-                                                {t.category}
-                                            </span>
-                                            <span className="text-[9px] text-muted">{t.month}/{t.year}</span>
-                                        </div>
-                                    </div>
+                            return (
+                                <div key={t.id} className="px-2.5 py-2 active:bg-primary-50/50 transition-colors">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => toggleStatus(t.id)}
+                                            className={`shrink-0 p-1 rounded-md transition-all active:scale-95 ${
+                                                isPaid
+                                                    ? 'bg-success-light text-success border border-success/30'
+                                                    : isPartial
+                                                        ? 'bg-blue-100 text-blue-600 border border-blue-200'
+                                                        : 'bg-warning-light text-warning border border-warning/30'
+                                            }`}
+                                        >
+                                            {isPaid ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                                        </button>
 
-                                    <div className="flex items-center shrink-0">
-                                        <button
-                                            onClick={() => handleEditClick(t)}
-                                            className="text-muted active:text-primary-600 p-1.5 rounded-md active:bg-primary-50 transition-colors"
-                                        >
-                                            <Edit2 size={14} />
-                                        </button>
-                                        <button
-                                            onClick={() => deleteTransaction(t.id)}
-                                            className="text-muted active:text-destructive p-1.5 rounded-md active:bg-destructive-light transition-colors"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between gap-1">
+                                                <p className="font-medium text-xs text-foreground truncate">{t.description || 'Sem descricao'}</p>
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-xs font-semibold text-foreground">{formatCurrency(t.amount)}</p>
+                                                    {isPartial && (
+                                                        <p className="text-[8px] text-warning">Resta: {formatCurrency(t.amount - paidAmount)}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700 font-medium border border-primary-200">
+                                                    {t.category}
+                                                </span>
+                                                <span className="text-[9px] text-muted">{t.month}/{t.year}</span>
+                                                {isPartial && (
+                                                    <span className="text-[8px] px-1 py-0.5 rounded bg-blue-100 text-blue-600 border border-blue-200">
+                                                        Parcial
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center shrink-0">
+                                            <button
+                                                onClick={() => handleEditClick(t)}
+                                                className="text-muted active:text-primary-600 p-1.5 rounded-md active:bg-primary-50 transition-colors"
+                                            >
+                                                <Edit2 size={14} />
+                                            </button>
+                                            <button
+                                                onClick={() => deleteTransaction(t.id)}
+                                                className="text-muted active:text-destructive p-1.5 rounded-md active:bg-destructive-light transition-colors"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* Empty State */}

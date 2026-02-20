@@ -29,7 +29,8 @@ export interface Transaction {
   month: string; // e.g., "Janeiro", "Fevereiro"
   year: number;
   dueDay: number; // 1-31
-  amount: number;
+  amount: number; // Valor Total
+  paidAmount: number; // Valor Pago (parcial) - 0 se nao pago
   category: string;
   status: Status;
   description?: string;

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     category VARCHAR(255) NOT NULL,
     description TEXT,
     amount DECIMAL(15, 2) NOT NULL,
+    paid_amount DECIMAL(15, 2) DEFAULT 0,
     month VARCHAR(20) NOT NULL,
     year INTEGER NOT NULL,
     due_day INTEGER DEFAULT 1 CHECK (due_day >= 1 AND due_day <= 31),
@@ -220,5 +221,13 @@ BEGIN
         ALTER TABLE companies ADD COLUMN zip_code VARCHAR(10);
         ALTER TABLE companies ADD COLUMN logo_url TEXT;
         CREATE INDEX IF NOT EXISTS idx_companies_cnpj ON companies(cnpj);
+    END IF;
+END $$;
+
+-- Migration: Add paid_amount column to transactions (for partial payments)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'paid_amount') THEN
+        ALTER TABLE transactions ADD COLUMN paid_amount DECIMAL(15, 2) DEFAULT 0;
     END IF;
 END $$;

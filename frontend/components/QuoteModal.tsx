@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, Save, Plus, Trash2, Loader2 } from 'lucide-react';
+import { X, Save, Plus, Trash2, Loader2, Search, Building2, User } from 'lucide-react';
 import { Quote, Category, CreateQuoteRequest } from '../types';
 import { api } from '../services/api';
 import { useFormValidation } from '../hooks/useFormValidation';
@@ -7,11 +7,12 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { validateRequired, validateMaxLength, validatePositiveNumber, combineValidations } from '../utils/validation';
 import { ErrorMessage } from './ErrorMessage';
 import { formatCurrency } from '../utils/currency';
+import { useToast } from '../contexts/ToastContext';
 
 // Fallback UUID generator for browsers that don't support crypto.randomUUID
 const generateUUID = (): string => {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return generateUUID();
+        return crypto.randomUUID();
     }
     // Fallback implementation
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -20,6 +21,46 @@ const generateUUID = (): string => {
         return v.toString(16);
     });
 };
+
+// Format CPF: 000.000.000-00
+const formatCPF = (value: string): string => {
+    const numbers = value.replace(/\D/g, '').slice(0, 11);
+    return numbers
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+};
+
+// Format CNPJ: 00.000.000/0000-00
+const formatCNPJ = (value: string): string => {
+    const numbers = value.replace(/\D/g, '').slice(0, 14);
+    return numbers
+        .replace(/(\d{2})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1/$2')
+        .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+};
+
+// Format CEP: 00000-000
+const formatCEP = (value: string): string => {
+    const numbers = value.replace(/\D/g, '').slice(0, 8);
+    return numbers.replace(/(\d{5})(\d)/, '$1-$2');
+};
+
+// Format Phone: (00) 00000-0000
+const formatPhone = (value: string): string => {
+    const numbers = value.replace(/\D/g, '').slice(0, 11);
+    if (numbers.length <= 10) {
+        return numbers
+            .replace(/(\d{2})(\d)/, '($1) $2')
+            .replace(/(\d{4})(\d)/, '$1-$2');
+    }
+    return numbers
+        .replace(/(\d{2})(\d)/, '($1) $2')
+        .replace(/(\d{5})(\d)/, '$1-$2');
+};
+
+type ClientType = 'PF' | 'PJ';
 
 interface QuoteItemForm {
     id: string;
@@ -41,6 +82,7 @@ interface Props {
 export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, categories, companyId }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { validateFields, getError, hasError, clearAllErrors } = useFormValidation();
+    const { addToast } = useToast();
 
     // Handle Escape key to close modal
     const handleClose = useCallback(() => {
@@ -49,6 +91,11 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
     }, [clearAllErrors, onClose]);
 
     useEscapeKey(handleClose, isOpen);
+
+    // Client type (PF = Pessoa Física, PJ = Pessoa Jurídica)
+    const [clientType, setClientType] = useState<ClientType>('PJ');
+    const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
+    const [isSearchingCEP, setIsSearchingCEP] = useState(false);
 
     // Client data
     const [clientName, setClientName] = useState('');
@@ -59,6 +106,91 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
     const [clientCity, setClientCity] = useState('');
     const [clientState, setClientState] = useState('');
     const [clientZipCode, setClientZipCode] = useState('');
+
+    // Search CNPJ via BrasilAPI
+    const handleSearchCNPJ = useCallback(async () => {
+        const cnpjNumbers = clientDocument.replace(/\D/g, '');
+        if (cnpjNumbers.length !== 14) {
+            addToast('error', 'CNPJ deve ter 14 digitos');
+            return;
+        }
+
+        setIsSearchingCNPJ(true);
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjNumbers}`);
+            if (!response.ok) {
+                throw new Error('CNPJ nao encontrado');
+            }
+            const data = await response.json();
+
+            // Fill form with API data
+            setClientName(data.razao_social || data.nome_fantasia || '');
+            setClientEmail(data.email || '');
+            setClientPhone(data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0,2)}) ${data.ddd_telefone_1.slice(2)}` : '');
+            setClientAddress(data.logradouro ? `${data.logradouro}, ${data.numero || 'S/N'}${data.complemento ? ` - ${data.complemento}` : ''} - ${data.bairro || ''}` : '');
+            setClientCity(data.municipio || '');
+            setClientState(data.uf || '');
+            setClientZipCode(formatCEP(data.cep || ''));
+
+            addToast('success', 'Dados do CNPJ carregados!');
+        } catch {
+            addToast('error', 'CNPJ nao encontrado ou invalido');
+        } finally {
+            setIsSearchingCNPJ(false);
+        }
+    }, [clientDocument, addToast]);
+
+    // Search CEP via ViaCEP
+    const handleSearchCEP = useCallback(async () => {
+        const cepNumbers = clientZipCode.replace(/\D/g, '');
+        if (cepNumbers.length !== 8) {
+            addToast('error', 'CEP deve ter 8 digitos');
+            return;
+        }
+
+        setIsSearchingCEP(true);
+        try {
+            const response = await fetch(`https://viacep.com.br/ws/${cepNumbers}/json/`);
+            if (!response.ok) {
+                throw new Error('CEP nao encontrado');
+            }
+            const data = await response.json();
+
+            if (data.erro) {
+                throw new Error('CEP nao encontrado');
+            }
+
+            // Fill form with API data
+            setClientAddress(data.logradouro ? `${data.logradouro}${data.complemento ? ` - ${data.complemento}` : ''} - ${data.bairro || ''}` : '');
+            setClientCity(data.localidade || '');
+            setClientState(data.uf || '');
+
+            addToast('success', 'Endereco carregado!');
+        } catch {
+            addToast('error', 'CEP nao encontrado');
+        } finally {
+            setIsSearchingCEP(false);
+        }
+    }, [clientZipCode, addToast]);
+
+    // Handle document change with formatting
+    const handleDocumentChange = useCallback((value: string) => {
+        if (clientType === 'PF') {
+            setClientDocument(formatCPF(value));
+        } else {
+            setClientDocument(formatCNPJ(value));
+        }
+    }, [clientType]);
+
+    // Handle phone change with formatting
+    const handlePhoneChange = useCallback((value: string) => {
+        setClientPhone(formatPhone(value));
+    }, []);
+
+    // Handle CEP change with formatting
+    const handleCEPChange = useCallback((value: string) => {
+        setClientZipCode(formatCEP(value));
+    }, []);
 
     // Quote data
     const [title, setTitle] = useState('');
@@ -71,6 +203,10 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
 
     useEffect(() => {
         if (quote) {
+            // Detect client type based on document length
+            const docNumbers = (quote.clientDocument || '').replace(/\D/g, '');
+            setClientType(docNumbers.length === 11 ? 'PF' : 'PJ');
+
             setClientName(quote.clientName);
             setClientEmail(quote.clientEmail || '');
             setClientPhone(quote.clientPhone || '');
@@ -98,6 +234,7 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
     }, [quote, isOpen]);
 
     const resetForm = useCallback(() => {
+        setClientType('PJ');
         setClientName('');
         setClientEmail('');
         setClientPhone('');
@@ -249,16 +386,87 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
                     {/* Client Section */}
                     <section>
                         <h4 className="text-sm font-semibold text-stone-700 mb-3 uppercase tracking-wide">Dados do Cliente</h4>
+
+                        {/* Client Type Selector */}
+                        <div className="flex gap-2 mb-4">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setClientType('PJ');
+                                    setClientDocument('');
+                                }}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all min-h-[48px] md:min-h-0 ${
+                                    clientType === 'PJ'
+                                        ? 'bg-stone-800 text-white'
+                                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                }`}
+                            >
+                                <Building2 className="w-4 h-4 shrink-0" />
+                                <span className="hidden sm:inline">Pessoa Juridica (CNPJ)</span>
+                                <span className="sm:hidden">PJ (CNPJ)</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setClientType('PF');
+                                    setClientDocument('');
+                                }}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all min-h-[48px] md:min-h-0 ${
+                                    clientType === 'PF'
+                                        ? 'bg-stone-800 text-white'
+                                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                }`}
+                            >
+                                <User className="w-4 h-4 shrink-0" />
+                                <span className="hidden sm:inline">Pessoa Fisica (CPF)</span>
+                                <span className="sm:hidden">PF (CPF)</span>
+                            </button>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Document Field with Search Button (CNPJ only) */}
                             <div className="md:col-span-2">
                                 <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
-                                    Nome <span className="text-red-500">*</span>
+                                    {clientType === 'PJ' ? 'CNPJ' : 'CPF'}
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={clientDocument}
+                                        onChange={(e) => handleDocumentChange(e.target.value)}
+                                        placeholder={clientType === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'}
+                                        className="flex-1 px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                                    />
+                                    {clientType === 'PJ' && (
+                                        <button
+                                            type="button"
+                                            onClick={handleSearchCNPJ}
+                                            disabled={isSearchingCNPJ || clientDocument.replace(/\D/g, '').length !== 14}
+                                            className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                        >
+                                            {isSearchingCNPJ ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <Search className="w-4 h-4" />
+                                            )}
+                                            <span className="hidden md:inline">Buscar</span>
+                                        </button>
+                                    )}
+                                </div>
+                                {clientType === 'PJ' && (
+                                    <p className="text-xs text-stone-500 mt-1">Digite o CNPJ e clique em Buscar para preencher automaticamente</p>
+                                )}
+                            </div>
+
+                            <div className="md:col-span-2">
+                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">
+                                    {clientType === 'PJ' ? 'Razao Social / Nome Fantasia' : 'Nome Completo'} <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={clientName}
                                     onChange={(e) => setClientName(e.target.value)}
-                                    placeholder="Nome do cliente ou empresa"
+                                    placeholder={clientType === 'PJ' ? 'Nome da empresa' : 'Nome completo'}
                                     className={`w-full px-3 py-2.5 bg-stone-50 border ${hasError('clientName') ? 'border-red-500' : 'border-stone-200'} rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400`}
                                 />
                                 <ErrorMessage error={getError('clientName')} />
@@ -280,32 +488,49 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
                                 <input
                                     type="text"
                                     value={clientPhone}
-                                    onChange={(e) => setClientPhone(e.target.value)}
+                                    onChange={(e) => handlePhoneChange(e.target.value)}
                                     placeholder="(00) 00000-0000"
                                     className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">CPF/CNPJ</label>
-                                <input
-                                    type="text"
-                                    value={clientDocument}
-                                    onChange={(e) => setClientDocument(e.target.value)}
-                                    placeholder="000.000.000-00"
-                                    className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
-                                />
+                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">CEP</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={clientZipCode}
+                                        onChange={(e) => handleCEPChange(e.target.value)}
+                                        placeholder="00000-000"
+                                        className="flex-1 px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleSearchCEP}
+                                        disabled={isSearchingCEP || clientZipCode.replace(/\D/g, '').length !== 8}
+                                        className="px-3 py-2.5 bg-stone-600 text-white rounded-xl hover:bg-stone-700 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {isSearchingCEP ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <Search className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">CEP</label>
-                                <input
-                                    type="text"
-                                    value={clientZipCode}
-                                    onChange={(e) => setClientZipCode(e.target.value)}
-                                    placeholder="00000-000"
+                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">Estado</label>
+                                <select
+                                    value={clientState}
+                                    onChange={(e) => setClientState(e.target.value)}
                                     className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
-                                />
+                                >
+                                    <option value="">Selecione</option>
+                                    {states.map(state => (
+                                        <option key={state} value={state}>{state}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div className="md:col-span-2">
@@ -328,20 +553,6 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
                                     placeholder="Cidade"
                                     className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
                                 />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs md:text-sm font-medium text-stone-600 mb-1.5">Estado</label>
-                                <select
-                                    value={clientState}
-                                    onChange={(e) => setClientState(e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-stone-400"
-                                >
-                                    <option value="">Selecione</option>
-                                    {states.map(state => (
-                                        <option key={state} value={state}>{state}</option>
-                                    ))}
-                                </select>
                             </div>
                         </div>
                     </section>
@@ -537,26 +748,27 @@ export const QuoteModal: React.FC<Props> = ({ isOpen, onClose, onSave, quote, ca
                 </form>
 
                 {/* Footer */}
-                <div className="p-4 md:p-6 border-t border-stone-200 bg-stone-50">
+                <div className="p-4 md:p-6 border-t border-stone-200 bg-stone-50 sticky bottom-0">
                     <div className="flex gap-3">
                         <button
                             type="button"
                             onClick={handleClose}
-                            className="flex-1 py-3 text-stone-600 bg-stone-200 hover:bg-stone-300 rounded-xl font-medium transition-colors"
+                            className="flex-1 py-3.5 md:py-3 text-stone-600 bg-stone-200 hover:bg-stone-300 rounded-xl font-medium transition-colors min-h-[48px] md:min-h-0"
                         >
                             Cancelar
                         </button>
                         <button
                             onClick={handleSubmit}
                             disabled={isSubmitting}
-                            className="flex-1 py-3 text-white bg-stone-800 hover:bg-stone-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            className="flex-1 py-3.5 md:py-3 text-white bg-stone-800 hover:bg-stone-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 min-h-[48px] md:min-h-0"
                         >
                             {isSubmitting ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                                 <Save className="w-4 h-4" />
                             )}
-                            {quote ? 'Salvar Alteracoes' : 'Criar Orcamento'}
+                            <span className="hidden sm:inline">{quote ? 'Salvar Alteracoes' : 'Criar Orcamento'}</span>
+                            <span className="sm:hidden">{quote ? 'Salvar' : 'Criar'}</span>
                         </button>
                     </div>
                 </div>
